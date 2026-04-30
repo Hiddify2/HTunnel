@@ -16,16 +16,16 @@ use clap::Parser;
 use rand::{distributions::Alphanumeric, Rng};
 use tokio::sync::mpsc;
 
-use candy_spoof::config::Config;
-use candy_spoof::raw_socket::{RawReceiver, RawSender};
-use candy_spoof::tun::TunDevice;
-use candy_spoof::tun_bridge::{
+use htunnel::config::Config;
+use htunnel::raw_socket::{RawReceiver, RawSender};
+use htunnel::tun::TunDevice;
+use htunnel::tun_bridge::{
     run_tun_reader, spawn_tun_writer, spawn_tunnel_to_tun, TunnelPool,
 };
-use candy_spoof::tunnel::{PeerAddr, TunnelManager};
+use htunnel::tunnel::{PeerAddr, TunnelManager};
 
 #[derive(Parser, Debug)]
-#[command(name = "server", about = "Candy-Spoof server (tunnel endpoint)")]
+#[command(name = "server", about = "htunnel server (tunnel endpoint)")]
 struct Args {
     /// Path to the JSON configuration file.
     #[arg(short, long, default_value = "config/server-new.json")]
@@ -51,7 +51,7 @@ async fn main() -> Result<()> {
     }
 
     log::info!(
-        "Candy-Spoof server starting | real={} spoof={} peer={}",
+        "htunnel server starting | real={} spoof={} peer={}",
         cfg.real_ip,
         cfg.spoofed_ip,
         cfg.peer_real_ip

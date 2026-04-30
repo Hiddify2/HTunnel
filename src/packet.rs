@@ -1,4 +1,4 @@
-//! Candy-Spoof wire protocol – the application-level packet that rides inside
+//! htunnel wire protocol – the application-level packet that rides inside
 //! spoofed UDP (data channel) or ICMP Echo (control channel) payloads.
 
 use anyhow::{bail, Result};
@@ -44,7 +44,7 @@ impl TryFrom<u8> for PacketKind {
     }
 }
 
-/// An application-level Candy-Spoof packet.
+/// An application-level htunnel packet.
 ///
 /// Wire format (big-endian):
 /// ```text
