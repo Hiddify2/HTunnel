@@ -1,0 +1,36 @@
+{
+  "inbounds": [
+    {
+      "type": "socks",
+      "listen": "127.0.0.1:1080"
+    }
+  ],
+
+  "outbounds": [
+    {
+      "type": "htunnel",
+      "server": "SERVER_IP:1081",
+
+      "encryption": {
+
+        "server_password": "secure",
+        "client_password": "Pass1"
+      },
+
+      "client_uplink": {
+        "type": "socks",
+        "server": "127.0.0.1",
+        "port": 1080,
+        "username": "",
+        "password": ""
+      },
+
+      "client_downlink": {
+        "type": "fake",
+        "transport": "udp",
+        "listen": "CLIENT_IP:1081",
+        "excepted_fake_ip_pool": []
+      }
+    }
+  ]
+}

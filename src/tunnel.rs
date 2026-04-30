@@ -1,0 +1,498 @@
+//! Tunnel state machine and manager.
+//!
+//! A [`Tunnel`] represents a single logical bidirectional stream between client
+//! and server. It tracks sequencing and liveness for best-effort delivery.
+//!
+//! [`TunnelManager`] multiplexes/demultiplexes packets across all active tunnels
+//! (keyed by `tunnel_id`) and provides the async interface used by the TUN
+//! forwarding code on both client and server.
+
+use std::net::Ipv4Addr;
+use std::sync::Arc;
+use std::time::{Duration, Instant};
+
+use anyhow::{anyhow, bail, Result};
+use bytes::Bytes;
+use dashmap::DashMap;
+use tokio::sync::{mpsc, Mutex, Notify};
+
+use crate::config::Config;
+use crate::config::TunnelProtocol;
+use crate::packet::{CandyPacket, PacketKind};
+use crate::raw_socket::{OutPacket, RawSender};
+
+const HEARTBEAT_IDLE_TIMEOUT: Duration = Duration::from_secs(5);
+const HEARTBEAT_MIN_INTERVAL: Duration = Duration::from_secs(2);
+
+// ── Tunnel state ──────────────────────────────────────────────────────────────
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TunnelState {
+    SynSent,
+    SynReceived,
+    Established,
+    Closing,
+    Closed,
+}
+
+/// Internal state for a single tunnel.
+struct Tunnel {
+    id:          u32,
+    state:       TunnelState,
+    send_next:   u32,
+    /// Deliver received application data to the owner of this tunnel.
+    app_tx:      mpsc::Sender<Bytes>,
+    last_active: Instant,
+    last_heartbeat_sent: Instant,
+    /// Notified when the tunnel transitions to Established.
+    established_notify: Arc<Notify>,
+}
+
+impl Tunnel {
+    fn new(
+        id:           u32,
+        state:        TunnelState,
+        init_seq:     u32,
+        app_tx:       mpsc::Sender<Bytes>,
+    ) -> Self {
+        Self {
+            id,
+            state,
+            send_next:   init_seq,
+            app_tx,
+            last_active: Instant::now(),
+            last_heartbeat_sent: Instant::now(),
+            established_notify: Arc::new(Notify::new()),
+        }
+    }
+
+    fn touch(&mut self) { self.last_active = Instant::now(); }
+
+    fn is_idle(&self, timeout: Duration) -> bool {
+        Instant::now().duration_since(self.last_active) > timeout
+    }
+
+    fn apply_syn_ack(&mut self, syn_ack: &CandyPacket) -> bool {
+        if self.state != TunnelState::SynSent {
+            return false;
+        }
+        self.state = TunnelState::Established;
+        true
+    }
+
+    fn make_data_packet(&mut self, payload: Bytes) -> CandyPacket {
+        let seq = self.send_next;
+        self.send_next = self.send_next.wrapping_add(1);
+        CandyPacket::new_data(self.id, seq, payload)
+    }
+}
+
+// ── Remote addressing ─────────────────────────────────────────────────────────
+
+/// The addressing information needed to build spoofed outgoing packets.
+#[derive(Debug, Clone)]
+pub struct PeerAddr {
+    /// Source IP we spoof on outgoing packets.
+    pub local_spoof: Ipv4Addr,
+    /// Destination IP of the peer (their real address).
+    pub peer_real:   Ipv4Addr,
+    /// UDP destination port for the data channel.
+    pub data_port:   u16,
+    /// ICMP echo identifier for the control channel.
+    pub icmp_id:     u16,
+    /// Whether this endpoint is running in server mode.
+    pub is_server:   bool,
+}
+
+// ── TunnelManager ─────────────────────────────────────────────────────────────
+
+/// Inner state shared through an `Arc`.
+struct Inner {
+    tunnels:               DashMap<u32, Arc<Mutex<Tunnel>>>,
+    /// Per-tunnel Notify fired when the tunnel reaches Established state.
+    established_notifiers: DashMap<u32, Arc<Notify>>,
+    sender:  RawSender,
+    addr:    PeerAddr,
+    cfg:     Arc<Config>,
+    /// Optional uplink channel (client-side) used to send encoded packets
+    /// over a TCP uplink to the server instead of raw spoofed UDP.
+    uplink:  Option<mpsc::Sender<Bytes>>,
+}
+
+/// Manages all active tunnels.  Cheaply cloneable (`Arc` inside).
+#[derive(Clone)]
+pub struct TunnelManager(Arc<Inner>);
+
+impl TunnelManager {
+    pub fn new(sender: RawSender, addr: PeerAddr, cfg: Arc<Config>, uplink: Option<mpsc::Sender<Bytes>>) -> Self {
+        Self(Arc::new(Inner {
+            tunnels:               DashMap::new(),
+            established_notifiers: DashMap::new(),
+            sender,
+            addr,
+            cfg,
+            uplink,
+        }))
+    }
+
+    // ── Tunnel lifecycle ──────────────────────────────────────────────────────
+
+    /// Open a new client-side tunnel.
+    ///
+    /// Returns:
+    /// - `app_rx`  – receive application data delivered from the peer
+    /// - `net_tx`  – send application data into the tunnel
+    pub async fn open_tunnel(&self) -> Result<(u32, mpsc::Receiver<Bytes>, mpsc::Sender<Bytes>)> {
+        let id:      u32 = rand::random();
+        let syn_seq: u32 = rand::random();
+
+        let cap = self.0.cfg.channel_capacity;
+        let (app_tx, app_rx) = mpsc::channel::<Bytes>(cap);
+        let (net_tx, net_rx) = mpsc::channel::<Bytes>(cap);
+
+        let tunnel = Tunnel::new(
+            id,
+            TunnelState::SynSent,
+            syn_seq.wrapping_add(1),  // SYN consumes syn_seq, first DATA is syn_seq+1
+            app_tx,
+        );
+        let established_notify = tunnel.established_notify.clone();
+        self.0.tunnels.insert(id, Arc::new(Mutex::new(tunnel)));
+
+        // Spawn a task that forwards application data to the raw socket.
+        self.spawn_send_task(id, net_rx);
+
+        // Send the initial SYN on the control channel.
+        let syn = CandyPacket::new_syn(id, syn_seq);
+        self.tx_control(syn).await?;
+
+        log::info!("tunnel {} opened (SYN sent)", id);
+        // Store the established notifier so is_established can await it.
+        self.0.established_notifiers.insert(id, established_notify);
+        Ok((id, app_rx, net_tx))
+    }
+
+    /// Accept an incoming SYN packet (server side) and create a tunnel.
+    ///
+    /// Returns the same triple as `open_tunnel`.
+    pub async fn accept_syn(
+        &self,
+        syn:    CandyPacket,
+        src_ip: Ipv4Addr,
+    ) -> Result<(u32, mpsc::Receiver<Bytes>, mpsc::Sender<Bytes>)> {
+        let id = syn.tunnel_id;
+
+        // Reject duplicate tunnels.
+        if self.0.tunnels.contains_key(&id) {
+            bail!("duplicate tunnel id {}", id);
+        }
+
+        let our_seq: u32 = rand::random();
+        let cap = self.0.cfg.channel_capacity;
+        let (app_tx, app_rx) = mpsc::channel::<Bytes>(cap);
+        let (net_tx, net_rx) = mpsc::channel::<Bytes>(cap);
+
+        let mut tunnel = Tunnel::new(
+            id,
+            TunnelState::SynReceived,
+            our_seq.wrapping_add(1), // SYN-ACK consumes our_seq; first DATA must be seq+1
+            app_tx,
+        );
+        // Server transitions to Established immediately after SYN-ACK.
+        tunnel.state = TunnelState::Established;
+        self.0.tunnels.insert(id, Arc::new(Mutex::new(tunnel)));
+
+        self.spawn_send_task(id, net_rx);
+
+        let syn_ack = CandyPacket::new_syn_ack(id, our_seq);
+        self.tx_control(syn_ack).await?;
+
+        log::info!("tunnel {} accepted from {}", id, src_ip);
+        Ok((id, app_rx, net_tx))
+    }
+
+    /// Close a tunnel and notify the peer.
+    pub async fn close_tunnel(&self, id: u32) {
+        if let Some((_, t)) = self.0.tunnels.remove(&id) {
+            let mut t = t.lock().await;
+            t.state = TunnelState::Closed;
+        }
+        self.0.established_notifiers.remove(&id);
+
+        let fin = CandyPacket::new_fin(id);
+        let _ = self.tx_control(fin).await;
+    }
+
+    // ── Incoming packet handler ───────────────────────────────────────────────
+
+    /// Route an incoming packet to the appropriate tunnel.
+    ///
+    /// Returns `Some((tunnel_id, src_ip))` when a SYN is received (server should
+    /// call `accept_syn` for that packet).  Returns `None` for all other types.
+    pub async fn handle_incoming(
+        &self,
+        src_ip: Ipv4Addr,
+        pkt:    CandyPacket,
+    ) -> Result<Option<(CandyPacket, Ipv4Addr)>> {
+        // SYN packets are not handled internally – hand them back to the caller.
+        if pkt.kind == PacketKind::Syn {
+            return Ok(Some((pkt, src_ip)));
+        }
+
+        let tunnel = match self.0.tunnels.get(&pkt.tunnel_id) {
+            Some(t) => t.clone(),
+            None => {
+                log::trace!("received packet for unknown tunnel {} from {}", pkt.tunnel_id, src_ip);
+                return Ok(None);
+            }
+        };
+
+        let mut t = tunnel.lock().await;
+
+        t.touch();
+
+        match pkt.kind {
+            PacketKind::Syn => unreachable!(), // handled above
+
+            PacketKind::SynAck => {
+                if t.apply_syn_ack(&pkt) {
+                    log::info!("tunnel {} established", pkt.tunnel_id);
+                    let notify = t.established_notify.clone();
+                    drop(t);
+                    // Wake any task waiting for establishment.
+                    notify.notify_waiters();
+                }
+            }
+
+            PacketKind::Data => {
+                let tid = t.id;
+                let app_tx = t.app_tx.clone();
+                drop(t);
+
+                if app_tx.send(pkt.payload).await.is_err() {
+                    self.close_tunnel(tid).await;
+                    return Ok(None);
+                }
+            }
+
+            PacketKind::Fin => {
+                t.state = TunnelState::Closed;
+                log::info!("tunnel {} closed by peer", pkt.tunnel_id);
+            }
+
+            PacketKind::Heartbeat => {
+                let tid  = t.id;
+                let hb_ack = CandyPacket {
+                    kind:      PacketKind::HeartbeatAck,
+                    tunnel_id: tid,
+                    seq:       pkt.seq,
+                    payload:   pkt.payload,
+                };
+                drop(t);
+                self.tx_control(hb_ack).await?;
+            }
+
+            PacketKind::HeartbeatAck => {
+                let _ = src_ip;
+            }
+        }
+
+        Ok(None)
+    }
+
+    // ── Periodic tick ─────────────────────────────────────────────────────────
+
+    /// Drive retransmissions and send heartbeats.  Call every ~100 ms.
+    pub async fn tick(&self) -> Result<()> {
+        let heartbeats: Vec<_> = {
+            let mut hbs  = Vec::new();
+            let mut dead = Vec::new();
+            let now = Instant::now();
+
+            let tunnels: Vec<(u32, Arc<Mutex<Tunnel>>)> = self
+                .0
+                .tunnels
+                .iter()
+                .map(|entry| (*entry.key(), entry.value().clone()))
+                .collect();
+
+            for (id, tunnel) in tunnels {
+                let mut t = tunnel.lock().await;
+
+                if t.state == TunnelState::Closed {
+                    dead.push(id);
+                    continue;
+                }
+                if t.state == TunnelState::Established
+                    && t.is_idle(HEARTBEAT_IDLE_TIMEOUT)
+                    && now.duration_since(t.last_heartbeat_sent) >= HEARTBEAT_MIN_INTERVAL
+                {
+                    t.last_heartbeat_sent = now;
+                    hbs.push(CandyPacket::new_heartbeat(t.id, rand::random()));
+                }
+            }
+
+            for id in &dead {
+                self.0.tunnels.remove(id);
+                self.0.established_notifiers.remove(id);
+            }
+            hbs
+        };
+
+        for hb in heartbeats { self.tx_control(hb).await?; }
+        Ok(())
+    }
+
+    // ── Status helpers ────────────────────────────────────────────────────────
+
+    /// Wait until the tunnel with `id` is in the Established state (or the
+    /// supplied deadline elapses).  Uses `Notify` – no polling.
+    pub async fn wait_established(&self, id: u32, timeout: Duration) -> bool {
+        // If already established, return immediately.
+        if self.is_established(id).await { return true; }
+
+        // Retrieve the notifier registered during open_tunnel.
+        let notifier = {
+            self.0.established_notifiers.get(&id).map(|n| n.clone())
+        };
+        let Some(notifier) = notifier else { return false; };
+
+        let established = tokio::time::timeout(timeout, notifier.notified())
+            .await
+            .is_ok()
+            && self.is_established(id).await;
+
+        if established {
+            self.0.established_notifiers.remove(&id);
+        }
+        established
+    }
+
+    /// True if the tunnel with `id` is in the Established state.
+    pub async fn is_established(&self, id: u32) -> bool {
+        let Some(tunnel) = self.0.tunnels.get(&id).map(|t| t.clone()) else {
+            return false;
+        };
+        let established = {
+            let guard = tunnel.lock().await;
+            guard.state == TunnelState::Established
+        };
+        established
+    }
+
+    // ── Internal helpers ──────────────────────────────────────────────────────
+
+    /// Spawn a background task that drains `net_rx` and sends each chunk as a
+    /// data packet through the tunnel.
+    fn spawn_send_task(
+        &self,
+        tunnel_id:     u32,
+        mut net_rx:    mpsc::Receiver<Bytes>,
+    ) {
+        let this = self.clone();
+        let mtu  = self.0.cfg.mtu;
+        tokio::spawn(async move {
+            while let Some(data) = net_rx.recv().await {
+                // Fragment large buffers into MTU-sized chunks.
+                let mut offset = 0;
+                while offset < data.len() {
+                    let end   = (offset + mtu).min(data.len());
+                    let chunk = data.slice(offset..end);
+
+                    if let Err(e) = this.enqueue_and_send(tunnel_id, chunk).await {
+                        log::debug!("send task tunnel {}: {}", tunnel_id, e);
+                        return;
+                    }
+                    offset = end;
+                }
+            }
+            log::debug!("send task for tunnel {} finished", tunnel_id);
+        });
+    }
+
+    async fn enqueue_and_send(&self, tunnel_id: u32, payload: Bytes) -> Result<()> {
+        let pkt = {
+            let tunnel = self
+                .0
+                .tunnels
+                .get(&tunnel_id)
+                .map(|t| t.clone())
+                .ok_or_else(|| anyhow!("tunnel {} gone", tunnel_id))?;
+            let mut t = tunnel.lock().await;
+            t.make_data_packet(payload)
+        };
+        self.tx_packet(pkt).await
+    }
+
+    async fn tx_control(&self, pkt: CandyPacket) -> Result<()> { self.tx_packet(pkt).await }
+    async fn tx_data(&self, pkt: CandyPacket) -> Result<()> { self.tx_packet(pkt).await }
+
+    async fn tx_packet(&self, pkt: CandyPacket) -> Result<()> {
+        let a   = &self.0.addr;
+        let enc = pkt.encode();
+
+        // Client-side: if protocol is UDP and an uplink channel is configured,
+        // send the encoded packet over the TCP uplink instead of raw spoofed UDP.
+        if self.0.cfg.protocol == TunnelProtocol::Udp && !a.is_server {
+            if let Some(uplink) = &self.0.uplink {
+                uplink.send(enc).await.map_err(|_| anyhow!("uplink channel closed"))?;
+                return Ok(());
+            }
+        }
+
+        let out = match self.0.cfg.protocol {
+            TunnelProtocol::Udp => OutPacket::Udp {
+                src_ip:   a.local_spoof,
+                dst_ip:   a.peer_real,
+                src_port: a.data_port,
+                dst_port: a.data_port,
+                payload:  enc,
+            },
+            TunnelProtocol::Icmp => {
+                let seq = (pkt.seq & 0xffff) as u16;
+                if a.is_server {
+                    OutPacket::IcmpReply {
+                        src_ip:  a.local_spoof,
+                        dst_ip:  a.peer_real,
+                        id:      a.icmp_id,
+                        seq,
+                        payload: enc,
+                    }
+                } else {
+                    OutPacket::Icmp {
+                        src_ip:  a.local_spoof,
+                        dst_ip:  a.peer_real,
+                        id:      a.icmp_id,
+                        seq,
+                        payload: enc,
+                    }
+                }
+            }
+        };
+
+        self.0.sender.send(out).await
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn server_first_data_seq_is_syn_ack_seq_plus_one() {
+        const TID: u32 = 9;
+        const OUR_SYN_ACK_SEQ: u32 = 777;
+        let (app_tx, _app_rx) = mpsc::channel::<Bytes>(1);
+
+        let mut tunnel = Tunnel::new(
+            TID,
+            TunnelState::Established,
+            OUR_SYN_ACK_SEQ.wrapping_add(1),
+            app_tx,
+        );
+        let syn_ack = CandyPacket::new_syn_ack(TID, OUR_SYN_ACK_SEQ);
+        let first_data = tunnel.make_data_packet(Bytes::from_static(b"x"));
+
+        assert_eq!(first_data.seq, syn_ack.seq.wrapping_add(1));
+    }
+}
