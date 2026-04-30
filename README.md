@@ -1,5 +1,17 @@
 # HTunnel
 
+> [!WARNING]
+> **Educational Purpose Only**
+>
+> This project is created strictly for educational and research purposes.  
+> It is intended to demonstrate concepts, techniques, and implementation details in a controlled and ethical manner.
+>
+> The author is **not responsible** for any misuse, abuse, or damage caused by this project.  
+> Any actions performed using this code are the sole responsibility of the user.
+>
+> By using this project, you agree to use it **legally and ethically**.
+
+
 **HTunnel** is an advanced IP tunneling system that uses **asymmetric transport** to evade network restrictions:
 
 - **Uplink (Client → Server)**: Data flows through a TCP connection via an upstream SOCKS proxy
