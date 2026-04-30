@@ -16,16 +16,16 @@ use clap::Parser;
 use rand::{distributions::Alphanumeric, Rng};
 use tokio::sync::mpsc;
 
-use htunnel::config::Config;
-use htunnel::raw_socket::{RawReceiver, RawSender};
-use htunnel::tun::TunDevice;
-use htunnel::tun_bridge::{
+use HTunnel::config::Config;
+use HTunnel::raw_socket::{RawReceiver, RawSender};
+use HTunnel::tun::TunDevice;
+use HTunnel::tun_bridge::{
     run_tun_reader, spawn_tun_writer, spawn_tunnel_to_tun, TunnelPool,
 };
-use htunnel::tunnel::{PeerAddr, TunnelManager};
+use HTunnel::tunnel::{PeerAddr, TunnelManager};
 
 #[derive(Parser, Debug)]
-#[command(name = "server", about = "htunnel server (tunnel endpoint)")]
+#[command(name = "server", about = "HTunnel server (tunnel endpoint)")]
 struct Args {
     /// Path to the JSON configuration file.
     #[arg(short, long, default_value = "config/server-new.json")]
@@ -51,7 +51,7 @@ async fn main() -> Result<()> {
     }
 
     log::info!(
-        "htunnel server starting | real={} spoof={} peer={}",
+        "HTunnel server starting | real={} spoof={} peer={}",
         cfg.real_ip,
         cfg.spoofed_ip,
         cfg.peer_real_ip

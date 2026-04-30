@@ -8,7 +8,7 @@
 
   "outbounds": [
     {
-      "type": "htunnel",
+      "type": "HTunnel",
       "server": "SERVER_IP:1081",
 
       "encryption": {

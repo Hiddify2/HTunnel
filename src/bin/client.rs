@@ -16,16 +16,16 @@ use bytes::Bytes;
 use clap::Parser;
 use tokio::sync::mpsc;
 
-use htunnel::config::Config;
-use htunnel::raw_socket::{RawReceiver, RawSender};
-use htunnel::tun::TunDevice;
-use htunnel::tun_bridge::{
+use HTunnel::config::Config;
+use HTunnel::raw_socket::{RawReceiver, RawSender};
+use HTunnel::tun::TunDevice;
+use HTunnel::tun_bridge::{
     run_tun_reader, spawn_tun_writer, spawn_tunnel_to_tun, TunnelPool,
 };
-use htunnel::tunnel::{PeerAddr, TunnelManager};
+use HTunnel::tunnel::{PeerAddr, TunnelManager};
 
 #[derive(Parser, Debug)]
-#[command(name = "client", about = "htunnel client (TUN forwarder)")]
+#[command(name = "client", about = "HTunnel client (TUN forwarder)")]
 struct Args {
     /// Path to the JSON configuration file.
     #[arg(short, long, default_value = "config/client-new.json")]
@@ -50,7 +50,7 @@ async fn main() -> Result<()> {
     let cfg = Arc::new(Config::from_file(&args.config)?);
 
     log::info!(
-        "htunnel client starting | real={} spoof={} peer={}",
+        "HTunnel client starting | real={} spoof={} peer={}",
         cfg.real_ip,
         cfg.spoofed_ip,
         cfg.peer_real_ip

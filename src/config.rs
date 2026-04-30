@@ -72,7 +72,7 @@ impl Config {
             for ib in inbounds {
                 if let Some(t) = ib.get("type").and_then(|s| s.as_str()) {
                     match t {
-                        "htunnel" => {
+                        "HTunnel" => {
                             // Server-side inbound
                             if let Some(listen) = ib.get("listen").and_then(|s| s.as_str()) {
                                 cfg.server_listen = Some(listen.to_string());
@@ -136,8 +136,8 @@ impl Config {
             for ob in outbounds {
                 if let Some(t) = ob.get("type").and_then(|s| s.as_str()) {
                     match t {
-                        "htunnel" => {
-                            // Client-side htunnel outbound
+                        "HTunnel" => {
+                            // Client-side HTunnel outbound
                             if let Some(server) = ob.get("server").and_then(|s| s.as_str()) {
                                 if let Ok(sa) = server.parse::<SocketAddr>() {
                                     cfg.peer_real_ip = match sa.ip() {

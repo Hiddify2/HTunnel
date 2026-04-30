@@ -98,7 +98,7 @@ HTunnel uses **JSON configuration files** (not TOML).
   ],
   "outbounds": [
     {
-      "type": "htunnel",
+      "type": "HTunnel",
       "server": "SERVER_IP:1081",
       "client_uplink": {
         "type": "socks",
@@ -133,7 +133,7 @@ HTunnel uses **JSON configuration files** (not TOML).
 {
   "inbounds": [
     {
-      "type": "htunnel",
+      "type": "HTunnel",
       "listen": "0.0.0.0:1081",
       "client_downlink": {
         "type": "fake",
@@ -340,7 +340,7 @@ MIT License. See [LICENSE](./LICENSE) for details.
 {
   "inbounds": [
     {
-      "type": "htunnel",
+      "type": "HTunnel",
       "listen": "0.0.0.0:1081",
       "client_downlink": {
         "type": "fake",
@@ -367,7 +367,7 @@ MIT License. See [LICENSE](./LICENSE) for details.
   ],
   "outbounds": [
     {
-      "type": "htunnel",
+      "type": "HTunnel",
       "server": "192.168.1.200:1081",
       "client_uplink": {
         "type": "direct"
@@ -389,7 +389,7 @@ MIT License. See [LICENSE](./LICENSE) for details.
 {
   "inbounds": [
     {
-      "type": "htunnel",
+      "type": "HTunnel",
       "listen": "0.0.0.0:1081",
       "client_downlink": {
         "type": "fake",
@@ -420,7 +420,7 @@ MIT License. See [LICENSE](./LICENSE) for details.
   ],
   "outbounds": [
     {
-      "type": "htunnel",
+      "type": "HTunnel",
       "server": "SERVER_IP:1081",
       "client_uplink": {
         "type": "socks",

@@ -74,7 +74,7 @@ pub enum OutPacket {
 pub struct InPacket {
     /// True source IP (from the IP header).
     pub src_ip: Ipv4Addr,
-    /// Parsed htunnel application packet.
+    /// Parsed HTunnel application packet.
     pub pkt:    CandyPacket,
 }
 
