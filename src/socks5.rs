@@ -4,7 +4,6 @@
 //! handshake, and relays data bidirectionally through a HTunnel tunnel.
 
 use std::net::SocketAddr;
-use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow::{bail, Context, Result};

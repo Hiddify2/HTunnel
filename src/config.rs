@@ -2,7 +2,7 @@
 //!
 //! Supports the new JSON-based schema with modular inbounds and outbounds.
 
-use std::net::{Ipv4Addr, SocketAddr};
+use std::net::Ipv4Addr;
 use serde::{Deserialize, Serialize};
 
 /// Top-level configuration container.

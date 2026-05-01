@@ -2,11 +2,11 @@
 //!
 //! Handles the UDP ASSOCIATE handshake and provides a relay for outbound packets.
 
-use std::net::{SocketAddr, ToSocketAddrs};
+use std::net::SocketAddr;
 use tokio::net::{TcpStream, UdpSocket};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use anyhow::{bail, Context, Result};
-use bytes::{Bytes, BytesMut, BufMut};
+use bytes::{BytesMut, BufMut};
 
 pub struct Socks5Uplink {
     /// The UDP socket used to send data to the relay.
@@ -71,7 +71,7 @@ impl Socks5Uplink {
 
         // 2. UDP ASSOCIATE Request
         // We tell the proxy to relay UDP from any address/port (0.0.0.0:0).
-        let mut assoc_req = vec![0x05, 0x03, 0x00, 0x01, 0, 0, 0, 0, 0, 0];
+        let assoc_req = vec![0x05, 0x03, 0x00, 0x01, 0, 0, 0, 0, 0, 0];
         tcp.write_all(&assoc_req).await?;
 
         let mut assoc_resp = [0u8; 10];

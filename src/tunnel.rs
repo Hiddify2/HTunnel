@@ -18,7 +18,6 @@ use tokio::sync::{mpsc, Mutex, Notify};
 
 use crate::arq::{SrArq, MAX_WINDOW};
 use crate::congestion::CongestionControl;
-use crate::config::Config;
 use crate::packet::{CandyPacket, PacketKind};
 use crate::raw_socket::{OutPacket, RawSender};
 
@@ -572,7 +571,8 @@ impl TunnelManager {
                     let arc = self.0.tunnels.get(&pkt.tunnel_id)
                         .map(|r| r.value().clone())
                         .ok_or_else(|| anyhow!("tunnel {} missing during transmit", pkt.tunnel_id))?;
-                    arc.lock().await.peer_ip
+                    let ip = arc.lock().await.peer_ip;
+                    ip
                 };
                 
                 // Pick a spoofed IP from the pool (simple rotation based on tunnel_id and packet seq)

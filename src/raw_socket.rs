@@ -20,7 +20,6 @@ use bytes::Bytes;
 use pnet_packet::ip::IpNextHeaderProtocols;
 use pnet_packet::ipv4::{Ipv4Flags, MutableIpv4Packet};
 use pnet_packet::udp::MutableUdpPacket;
-use pnet_packet::Packet;
 use tokio::sync::mpsc;
 
 use crate::packet::CandyPacket;
