@@ -69,23 +69,16 @@ async fn main() -> Result<()> {
     let target_addr: SocketAddr = target_addr_str.parse()
         .with_context(|| format!("Invalid target address: {}", target_addr_str))?;
 
-    let client_real = match target_addr {
-        SocketAddr::V4(v4) => *v4.ip(),
-        _ => bail!("Only IPv4 target addresses are supported for spoofing"),
-    };
-
-    // Pick a spoofed source IP
-    let local_spoof = if fake_ip_pool.is_empty() {
-        Ipv4Addr::new(1, 1, 1, 1)
-    } else {
-        fake_ip_pool[0]
-    };
-
     // 2. Initialize TunnelManager
+    let local_spoofs = if fake_ip_pool.is_empty() {
+        vec![Ipv4Addr::new(1, 1, 1, 1)]
+    } else {
+        fake_ip_pool.clone()
+    };
+
     let outbound = OutboundTransport::SpoofedDownlink {
         sender,
-        client_real,
-        local_spoof,
+        local_spoofs,
         data_port: target_addr.port(),
     };
     let manager = TunnelManager::new(outbound, DEFAULT_MTU, DEFAULT_CWND);

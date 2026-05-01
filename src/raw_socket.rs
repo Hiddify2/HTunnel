@@ -219,6 +219,7 @@ fn udp_recv_loop(
 
         // Validate source IP against whitelist
         if !is_allowed(src_ip, allowed) {
+            log::trace!("dropping udp packet from unauthorized ip: {}", src_ip);
             continue;
         }
 
@@ -232,6 +233,7 @@ fn udp_recv_loop(
         // Check destination port
         let dst_port = u16::from_be_bytes([udp_data[2], udp_data[3]]);
         if dst_port != data_port {
+            log::trace!("dropping udp packet with wrong dst port: {} (expected {})", dst_port, data_port);
             continue;
         }
 
@@ -271,6 +273,8 @@ fn raw_recvfrom(fd: RawFd, buf: &mut [u8]) -> Result<(usize, Ipv4Addr)> {
 }
 
 fn is_allowed(ip: Ipv4Addr, allowed: &[Ipv4Addr]) -> bool {
+    if allowed.is_empty() { return true; }
+    if allowed.contains(&Ipv4Addr::UNSPECIFIED) { return true; }
     allowed.contains(&ip)
 }
 

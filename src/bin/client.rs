@@ -85,12 +85,15 @@ async fn main() -> Result<()> {
     // For simplicity, we'll allow any IP for now, or we could filter by the server's real IP.
     // The old code used allowed_peers.
     let mut allowed = excepted_ips.clone();
+    if allowed.is_empty() {
+        log::info!("No excepted_fake_ip_pool provided, allowing all source IPs for downlink");
+        allowed.push(Ipv4Addr::UNSPECIFIED); // 0.0.0.0 means allow all in our new is_allowed
+    }
     if let SocketAddr::V4(v4) = server_addr {
         allowed.push(*v4.ip());
     }
     
-    // Note: RawReceiver::spawn needs data_port and icmp_id.
-    // In the new config, we'll use the port from the listen address.
+    log::info!("Downlink RawReceiver listening on port {} (allowing {:?})", listen_addr.port(), allowed);
     let mut receiver = RawReceiver::spawn(listen_addr.port(), allowed)?;
 
     // 3. Initialize TunnelManager

@@ -50,6 +50,8 @@ struct Tunnel {
     window_notify: Arc<Notify>,
     /// Notified when the tunnel transitions to Established.
     established_notify: Arc<Notify>,
+    /// The real IP of the peer (used for spoofed downlink).
+    peer_ip:     Ipv4Addr,
 }
 
 impl Tunnel {
@@ -60,6 +62,7 @@ impl Tunnel {
         init_recv:    u32,
         app_tx:       mpsc::Sender<Bytes>,
         initial_cwnd: f64,
+        peer_ip:      Ipv4Addr,
     ) -> Self {
         Self {
             id,
@@ -71,6 +74,7 @@ impl Tunnel {
             last_heartbeat_sent: Instant::now(),
             window_notify:      Arc::new(Notify::new()),
             established_notify: Arc::new(Notify::new()),
+            peer_ip,
         }
     }
 
@@ -130,10 +134,8 @@ pub enum OutboundTransport {
     /// Server-side downlink via spoofed raw packets.
     SpoofedDownlink {
         sender: RawSender,
-        /// The client's real public address.
-        client_real: Ipv4Addr,
-        /// The spoofed source IP to use.
-        local_spoof: Ipv4Addr,
+        /// The pool of spoofed source IPs to rotate through.
+        local_spoofs: Vec<Ipv4Addr>,
         /// UDP port for data.
         data_port: u16,
     },
@@ -180,13 +182,24 @@ impl TunnelManager {
         let (app_tx, app_rx) = mpsc::channel::<Bytes>(1024);
         let (net_tx, net_rx) = mpsc::channel::<Bytes>(1024);
 
+        let peer_ip = match &self.0.outbound {
+            OutboundTransport::Socks5Uplink { server_addr, .. } => {
+                match server_addr {
+                    SocketAddr::V4(v4) => *v4.ip(),
+                    _ => Ipv4Addr::new(0,0,0,0),
+                }
+            }
+            _ => Ipv4Addr::new(0,0,0,0), // Not really used for server SYN, but let's be safe
+        };
+
         let tunnel = Tunnel::new(
             id,
             TunnelState::SynSent,
-            syn_seq.wrapping_add(1),  // SYN consumes syn_seq, first DATA is syn_seq+1
+            syn_seq.wrapping_add(1),
             0,
             app_tx,
             self.0.initial_cwnd,
+            peer_ip,
         );
         // Grab the notifiers before inserting (to avoid re-locking).
         let window_notify      = tunnel.window_notify.clone();
@@ -232,6 +245,7 @@ impl TunnelManager {
             syn.seq.wrapping_add(1),
             app_tx,
             self.0.initial_cwnd,
+            src_ip,
         );
         // Server transitions to Established immediately after SYN-ACK.
         tunnel.state = TunnelState::Established;
@@ -553,11 +567,21 @@ impl TunnelManager {
                 let enc = pkt.encode();
                 relay.send_to(&enc, *server_addr).await
             }
-            OutboundTransport::SpoofedDownlink { sender, client_real, local_spoof, data_port } => {
+            OutboundTransport::SpoofedDownlink { sender, local_spoofs, data_port } => {
+                let peer_ip = {
+                    let t = self.0.tunnels.get(&pkt.tunnel_id)
+                        .ok_or_else(|| anyhow!("tunnel {} missing during transmit", pkt.tunnel_id))?;
+                    t.lock().await.peer_ip
+                };
+                
+                // Pick a spoofed IP from the pool (simple rotation based on tunnel_id and packet seq)
+                let spoof_idx = (pkt.tunnel_id as usize + pkt.seq as usize) % local_spoofs.len();
+                let src_ip = local_spoofs[spoof_idx];
+
                 let enc = pkt.encode();
                 let out = OutPacket::Udp {
-                    src_ip:   *local_spoof,
-                    dst_ip:   *client_real,
+                    src_ip,
+                    dst_ip:   peer_ip,
                     src_port: *data_port,
                     dst_port: *data_port,
                     payload:  enc,
@@ -576,7 +600,7 @@ mod tests {
     async fn client_syn_ack_updates_recv_base_to_peer_seq_plus_one() {
         const PEER_SEQ: u32 = 777;
         let (app_tx, _app_rx) = mpsc::channel::<Bytes>(1);
-        let mut tunnel = Tunnel::new(1, TunnelState::SynSent, 100, 0, app_tx, 10.0);
+        let mut tunnel = Tunnel::new(1, TunnelState::SynSent, 100, 0, app_tx, 10.0, Ipv4Addr::UNSPECIFIED);
         let syn_ack = CandyPacket::new_syn_ack(1, 99, PEER_SEQ);
 
         assert_eq!(tunnel.arq.recv_base(), 0);
@@ -587,7 +611,7 @@ mod tests {
     #[tokio::test]
     async fn make_data_packet_uses_arq_assigned_seq() {
         let (app_tx, _app_rx) = mpsc::channel::<Bytes>(1);
-        let mut tunnel = Tunnel::new(42, TunnelState::Established, 1000, 7, app_tx, 10.0);
+        let mut tunnel = Tunnel::new(42, TunnelState::Established, 1000, 7, app_tx, 10.0, Ipv4Addr::UNSPECIFIED);
 
         let p1 = tunnel.make_data_packet(Bytes::from_static(b"a"));
         let p2 = tunnel.make_data_packet(Bytes::from_static(b"b"));
