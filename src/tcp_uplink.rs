@@ -10,6 +10,9 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
 use tokio::sync::mpsc;
 
+use crate::packet::CandyPacket;
+use crate::tunnel::TunnelManager;
+
 /// SOCKS5 authentication methods
 const SOCKS5_VERSION: u8 = 0x05;
 const AUTH_NONE: u8 = 0x00;
@@ -31,6 +34,7 @@ pub async fn spawn_tcp_uplink(
     server_addr: Ipv4Addr,
     server_port: u16,
     mut uplink_rx: mpsc::Receiver<Bytes>,
+    manager: TunnelManager,
 ) -> Result<()> {
     // Parse upstream proxy address
     let upstream_addr = upstream.parse::<SocketAddr>()
@@ -51,13 +55,43 @@ pub async fn spawn_tcp_uplink(
 
     log::info!("SOCKS5 tunnel established to {}:{}", server_addr, server_port);
 
-    // Relay packets from uplink channel over the TCP stream
-    while let Some(packet) = uplink_rx.recv().await {
-        send_framed_packet(&mut stream, &packet).await?;
-    }
+    let (mut tcp_reader, mut tcp_writer) = stream.into_split();
+    let mut read_buf = BytesMut::with_capacity(8192);
 
-    log::info!("TCP uplink channel closed");
-    Ok(())
+    loop {
+        tokio::select! {
+            maybe_packet = uplink_rx.recv() => {
+                match maybe_packet {
+                    Some(packet) => {
+                        send_framed_packet(&mut tcp_writer, &packet).await?;
+                    }
+                    None => {
+                        log::info!("TCP uplink channel closed");
+                        return Ok(());
+                    }
+                }
+            }
+            read_result = read_frame(&mut tcp_reader, &mut read_buf) => {
+                match read_result {
+                    Ok(Some(payload)) => {
+                        if let Ok(pkt) = CandyPacket::decode(payload) {
+                            if let Err(e) = manager.handle_incoming(server_addr, pkt).await {
+                                log::debug!("uplink handle_incoming: {}", e);
+                            }
+                        }
+                    }
+                    Ok(None) => {
+                        log::info!("TCP uplink connection closed by peer");
+                        return Ok(());
+                    }
+                    Err(e) => {
+                        log::warn!("TCP uplink read error: {}", e);
+                        return Err(e);
+                    }
+                }
+            }
+        }
+    }
 }
 
 /// Perform SOCKS5 authentication (method negotiation).
@@ -128,4 +162,36 @@ async fn send_framed_packet(stream: &mut TcpStream, packet: &[u8]) -> Result<()>
 
     stream.write_all(&frame).await?;
     Ok(())
+}
+
+/// Read a framed packet from the TCP stream.
+/// Returns Ok(Some(payload)) on success, Ok(None) on EOF, Err on error.
+async fn read_frame(
+    reader: &mut tokio::net::tcp::OwnedReadHalf,
+    buf: &mut BytesMut,
+) -> Result<Option<Bytes>> {
+    while buf.len() < 4 {
+        let mut tmp = [0u8; 4096];
+        match reader.read(&mut tmp).await? {
+            0 => return Ok(None),
+            n => buf.extend_from_slice(&tmp[..n]),
+        }
+    }
+
+    let len = u32::from_be_bytes([buf[0], buf[1], buf[2], buf[3]]) as usize;
+    if len > 65536 {
+        bail!("Frame length too large: {}", len);
+    }
+
+    while buf.len() < 4 + len {
+        let mut tmp = [0u8; 4096];
+        match reader.read(&mut tmp).await? {
+            0 => return Ok(None),
+            n => buf.extend_from_slice(&tmp[..n]),
+        }
+    }
+
+    let payload = Bytes::copy_from_slice(&buf[4..4 + len]);
+    let _ = buf.split_to(4 + len);
+    Ok(Some(payload))
 }

@@ -84,8 +84,9 @@ async fn main() -> Result<()> {
         let upstream = format!("{}:{}", server, port);
         let server_addr = cfg.peer_real_ip;
         let server_port = cfg.data_port;
+        let mgr_uplink = manager.clone();
         tokio::spawn(async move {
-            if let Err(e) = spawn_tcp_uplink(&upstream, server_addr, server_port, uplink_rx).await {
+            if let Err(e) = spawn_tcp_uplink(&upstream, server_addr, server_port, uplink_rx, mgr_uplink).await {
                 log::error!("TCP uplink failed: {}", e);
             }
         });
