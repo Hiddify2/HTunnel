@@ -1,0 +1,39 @@
+{
+  "inbounds": [
+    {
+      "type": "HTunnel",
+      "listen": "0.0.0.0:1081",
+
+      "encryption": {
+        "server_password": "secure",
+        "client_passwords": [
+          "Pass1",
+          "Pass2"
+        ]
+      },
+
+      "client_downlink": {
+        "type": "fake",
+        "transport": "udp",
+        "target": "CLIENT_IP:1080",
+        "fake_ip_pool": [
+          "IP_1",
+          "IP_2"
+        ]
+      }
+    }
+  ],
+
+  "outbounds": [
+    {
+      "type": "direct"
+    },
+    {
+      "type": "socks",
+      "server": "127.0.0.1",
+      "port": 1080,
+      "username": "",
+      "password": ""
+    }
+  ]
+}
