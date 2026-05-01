@@ -79,7 +79,7 @@ async fn main() -> Result<()> {
     let (uplink_tx, uplink_rx) = mpsc::channel::<Bytes>(4096);
     let manager = TunnelManager::new(sender, peer_addr, cfg.clone(), Some(uplink_tx));
 
-    // ── Spawn TCP uplink task if SOCKS proxy is configured ─────────────────────
+    // ── Spawn TCP uplink task if upstream proxy is configured ─────────────────
     if let Some(OutboundMode::Socks { server, port }) = &cfg.client_uplink {
         let upstream = format!("{}:{}", server, port);
         let server_addr = cfg.peer_real_ip;

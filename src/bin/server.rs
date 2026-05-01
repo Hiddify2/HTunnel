@@ -16,13 +16,14 @@ use clap::Parser;
 use tokio::sync::mpsc;
 
 use HTunnel::config::Config;
-use HTunnel::raw_socket::{RawReceiver, RawSender};
-use HTunnel::tcp_server::run_tcp_server;
+use HTunnel::raw_socket::RawSender;
 use HTunnel::tun::TunDevice;
 use HTunnel::tun_bridge::{
     run_tun_reader, spawn_tun_writer, spawn_tunnel_to_tun, TunnelPool,
 };
 use HTunnel::tunnel::{PeerAddr, TunnelManager};
+use HTunnel::udp_listener::run_udp_listener;
+use HTunnel::tcp_server::run_tcp_server;
 
 #[derive(Parser, Debug)]
 #[command(name = "server", about = "HTunnel server (tunnel endpoint)")]
@@ -58,11 +59,6 @@ async fn main() -> Result<()> {
     );
 
     let sender = RawSender::spawn()?;
-
-    let mut allowed = cfg.allowed_peers.clone();
-    allowed.push(cfg.peer_real_ip);
-    allowed.push(cfg.peer_spoofed_ip);
-    let mut receiver = RawReceiver::spawn(cfg.protocol, cfg.data_port, cfg.icmp_id, allowed)?;
 
     let peer_addr = PeerAddr {
         local_spoof: cfg.pick_spoofed_ip(),
@@ -108,9 +104,20 @@ async fn main() -> Result<()> {
         tun.mtu()
     );
 
-    // ── Spawn TCP server for SOCKS proxy connections ─────────────────────────
-    let mgr_tcp = manager.clone();
+    // ── Spawn UDP listener for direct UDP packets ────────────────────────────
+    let cfg_udp = cfg.clone();
+    let mgr_udp = manager.clone();
+    let pool_udp = pool.clone();
+    let tx_udp = net_to_tun_tx.clone();
+    tokio::spawn(async move {
+        if let Err(e) = run_udp_listener(cfg_udp, mgr_udp, pool_udp, tx_udp).await {
+            log::error!("UDP listener error: {}", e);
+        }
+    });
+
+    // ── Spawn TCP server for SOCKS tunnel clients ────────────────────────────
     let cfg_tcp = cfg.clone();
+    let mgr_tcp = manager.clone();
     let pool_tcp = pool.clone();
     let tx_tcp = net_to_tun_tx.clone();
     tokio::spawn(async move {
@@ -131,37 +138,8 @@ async fn main() -> Result<()> {
         }
     });
 
-    // ── Main receive loop ────────────────────────────────────────────────────
+    // ── Main loop: just wait for shutdown ────────────────────────────────────
     loop {
-        let incoming = match receiver.recv().await {
-            Some(p) => p,
-            None    => break,
-        };
-
-        if !cfg.is_peer_allowed(&incoming.src_ip) {
-            log::trace!("dropping packet from disallowed IP {}", incoming.src_ip);
-            continue;
-        }
-
-        match manager
-            .handle_incoming(incoming.src_ip, incoming.pkt)
-            .await
-        {
-            Ok(Some((syn_pkt, src_ip))) => {
-                // New tunnel request – accept it and register for TUN forwarding.
-                match manager.accept_syn(syn_pkt, src_ip).await {
-                    Ok((tid, app_rx, net_tx)) => {
-                        pool.add_tunnel(tid, net_tx).await;
-                        spawn_tunnel_to_tun(app_rx, net_to_tun_tx.clone());
-                        log::info!("tunnel {} ready", tid);
-                    }
-                    Err(e) => log::warn!("accept_syn: {}", e),
-                }
-            }
-            Ok(None) => {}
-            Err(e) => log::warn!("handle_incoming: {}", e),
-        }
+        tokio::time::sleep(Duration::from_secs(3600)).await;
     }
-
-    Ok(())
 }
