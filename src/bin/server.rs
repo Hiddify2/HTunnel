@@ -13,7 +13,7 @@ use clap::Parser;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpStream, UdpSocket};
 
-use HTunnel::config::{Config, InboundConfig, OutboundConfig, ServerDownlinkConfig, DEFAULT_MTU, DEFAULT_CWND};
+use HTunnel::config::{Config, InboundConfig, OutboundConfig, ServerDownlinkConfig};
 use HTunnel::raw_socket::RawSender;
 use HTunnel::tunnel::{OutboundTransport, TunnelManager};
 use HTunnel::packet::CandyPacket;
@@ -66,8 +66,19 @@ async fn main() -> Result<()> {
         bail!("Only 'udp' transport is supported for fake downlink");
     }
 
-    let target_addr: SocketAddr = target_addr_str.parse()
-        .with_context(|| format!("Invalid target address: {}", target_addr_str))?;
+    // Handle potential placeholder or auto-detect IP
+    let (target_ip, target_port) = if target_addr_str.contains("CLIENT_IP") || target_addr_str.starts_with("0.0.0.0") {
+        let port = target_addr_str.split(':').last().and_then(|p| p.parse().ok()).unwrap_or(1080);
+        (None, port)
+    } else {
+        let addr: SocketAddr = target_addr_str.parse()
+            .with_context(|| format!("Invalid target address: {}", target_addr_str))?;
+        let ip = match addr {
+            SocketAddr::V4(v4) => Some(*v4.ip()),
+            _ => None,
+        };
+        (ip, addr.port())
+    };
 
     // 2. Initialize TunnelManager
     let local_spoofs = if fake_ip_pool.is_empty() {
@@ -79,7 +90,7 @@ async fn main() -> Result<()> {
     let outbound = OutboundTransport::SpoofedDownlink {
         sender,
         local_spoofs,
-        data_port: target_addr.port(),
+        data_port: target_port,
     };
     let manager = TunnelManager::new(outbound);
 
@@ -128,8 +139,9 @@ async fn main() -> Result<()> {
             Ok(Some((syn_pkt, src_ip))) => {
                 let mgr2 = manager.clone();
                 let cfg2 = Arc::new(cfg.clone());
+                let t_ip = target_ip;
                 tokio::spawn(async move {
-                    if let Err(e) = handle_new_tunnel(syn_pkt, src_ip, mgr2, cfg2).await {
+                    if let Err(e) = handle_new_tunnel(syn_pkt, src_ip, t_ip, mgr2, cfg2).await {
                         log::warn!("session error: {}", e);
                     }
                 });
@@ -141,13 +153,14 @@ async fn main() -> Result<()> {
 }
 
 async fn handle_new_tunnel(
-    syn:     CandyPacket,
-    src_ip:  Ipv4Addr,
-    manager: TunnelManager,
-    _cfg:     Arc<Config>,
+    syn:      CandyPacket,
+    src_ip:   Ipv4Addr,
+    target_ip: Option<Ipv4Addr>,
+    manager:  TunnelManager,
+    _cfg:      Arc<Config>,
 ) -> Result<()> {
     let (tunnel_id, mut app_rx, net_tx) = manager
-        .accept_syn(syn, src_ip)
+        .accept_syn(syn, src_ip, target_ip)
         .await
         .context("accept_syn")?;
 
@@ -177,7 +190,7 @@ async fn handle_new_tunnel(
     // TCP → tunnel
     let net_tx2 = net_tx;
     let tcp_to_t = tokio::spawn(async move {
-        let mut buf = vec![0u8; DEFAULT_MTU];
+        let mut buf = vec![0u8; 1500]; // Standard MTU
         loop {
             match tcp_r.read(&mut buf).await {
                 Ok(0) | Err(_) => break,
