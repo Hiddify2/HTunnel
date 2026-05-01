@@ -50,6 +50,8 @@ pub struct Config {
     pub server_listen: Option<String>,
     /// Client-side: SOCKS inbound listen for local connections (e.g., "127.0.0.1:1080")
     pub socks_listen: Option<String>,
+    /// Client-side: SOCKS5 proxy port (parsed from socks_listen)
+    pub socks5_port: u16,
     /// Server outbound mode (direct or socks upstream for tunnel egress)
     pub outbound: Option<OutboundMode>,
     /// Client uplink: upstream proxy to send tunnel packets through (TCP encapsulation)
@@ -123,6 +125,10 @@ impl Config {
                             // Client-side SOCKS inbound
                             if let Some(listen) = ib.get("listen").and_then(|s| s.as_str()) {
                                 cfg.socks_listen = Some(listen.to_string());
+                                // Parse port from listen address
+                                if let Ok(sa) = listen.parse::<SocketAddr>() {
+                                    cfg.socks5_port = sa.port();
+                                }
                             }
                         }
                         _ => {}
@@ -284,6 +290,7 @@ impl Default for Config {
             forward_port: 0,
             server_listen: None,
             socks_listen: None,
+            socks5_port: 1080,
             outbound: None,
             client_uplink: None,
         }

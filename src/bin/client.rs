@@ -18,6 +18,7 @@ use tokio::sync::mpsc;
 
 use HTunnel::config::{Config, OutboundMode};
 use HTunnel::raw_socket::{RawReceiver, RawSender};
+use HTunnel::socks5::run_socks5;
 use HTunnel::tcp_uplink::spawn_tcp_uplink;
 use HTunnel::tun::TunDevice;
 use HTunnel::tun_bridge::{
@@ -86,6 +87,17 @@ async fn main() -> Result<()> {
         tokio::spawn(async move {
             if let Err(e) = spawn_tcp_uplink(&upstream, server_addr, server_port, uplink_rx).await {
                 log::error!("TCP uplink failed: {}", e);
+            }
+        });
+    }
+
+    // ── Spawn local SOCKS5 proxy for application connections ──────────────────
+    if cfg.socks_listen.is_some() {
+        let mgr_socks = manager.clone();
+        let cfg_socks = cfg.clone();
+        tokio::spawn(async move {
+            if let Err(e) = run_socks5(cfg_socks, mgr_socks).await {
+                log::error!("SOCKS5 proxy error: {}", e);
             }
         });
     }

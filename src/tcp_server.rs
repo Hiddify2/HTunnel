@@ -14,6 +14,7 @@ use tokio::net::{TcpListener, TcpStream};
 use crate::config::Config;
 use crate::packet::CandyPacket;
 use crate::tunnel::TunnelManager;
+use crate::tun_bridge::{spawn_tunnel_to_tun, TunnelPool};
 
 /// Start the TCP server listener.
 ///
@@ -22,6 +23,8 @@ use crate::tunnel::TunnelManager;
 pub async fn run_tcp_server(
     cfg: Arc<Config>,
     manager: TunnelManager,
+    pool: TunnelPool,
+    net_to_tun_tx: tokio::sync::mpsc::Sender<Bytes>,
 ) -> Result<()> {
     // Derive listen address from config
     let listen_addr = format!("0.0.0.0:{}", cfg.data_port);
@@ -37,8 +40,10 @@ pub async fn run_tcp_server(
             Ok((stream, peer_addr)) => {
                 let cfg_clone = cfg.clone();
                 let mgr_clone = manager.clone();
+                let pool_clone = pool.clone();
+                let tx_clone = net_to_tun_tx.clone();
                 tokio::spawn(async move {
-                    if let Err(e) = handle_client(stream, peer_addr, cfg_clone, mgr_clone).await {
+                    if let Err(e) = handle_client(stream, peer_addr, cfg_clone, mgr_clone, pool_clone, tx_clone).await {
                         log::warn!("Client {} error: {}", peer_addr, e);
                     }
                 });
@@ -59,6 +64,8 @@ async fn handle_client(
     peer_addr: SocketAddr,
     cfg: Arc<Config>,
     manager: TunnelManager,
+    pool: TunnelPool,
+    net_to_tun_tx: tokio::sync::mpsc::Sender<Bytes>,
 ) -> Result<()> {
     log::info!("Client connected from {}", peer_addr);
 
@@ -118,9 +125,11 @@ async fn handle_client(
                     // Route packet through tunnel manager
                     match manager.handle_incoming(client_ip, pkt).await {
                         Ok(Some((syn_pkt, _))) => {
-                            // New tunnel SYN received
+                            // New tunnel SYN received - accept and add to pool for TUN forwarding
                             match manager.accept_syn(syn_pkt, client_ip).await {
-                                Ok((tid, _app_rx, _net_tx)) => {
+                                Ok((tid, app_rx, net_tx)) => {
+                                    pool.add_tunnel(tid, net_tx).await;
+                                    spawn_tunnel_to_tun(app_rx, net_to_tun_tx.clone());
                                     log::info!(
                                         "Tunnel {} accepted from {} (TCP)",
                                         tid, client_ip

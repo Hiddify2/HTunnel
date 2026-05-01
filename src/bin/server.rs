@@ -18,6 +18,7 @@ use tokio::sync::mpsc;
 
 use HTunnel::config::Config;
 use HTunnel::raw_socket::{RawReceiver, RawSender};
+use HTunnel::tcp_server::run_tcp_server;
 use HTunnel::tun::TunDevice;
 use HTunnel::tun_bridge::{
     run_tun_reader, spawn_tun_writer, spawn_tunnel_to_tun, TunnelPool,
@@ -107,6 +108,17 @@ async fn main() -> Result<()> {
         cfg.tun_peer_ip,
         tun.mtu()
     );
+
+    // ── Spawn TCP server for SOCKS proxy connections ─────────────────────────
+    let mgr_tcp = manager.clone();
+    let cfg_tcp = cfg.clone();
+    let pool_tcp = pool.clone();
+    let tx_tcp = net_to_tun_tx.clone();
+    tokio::spawn(async move {
+        if let Err(e) = run_tcp_server(cfg_tcp, mgr_tcp, pool_tcp, tx_tcp).await {
+            log::error!("TCP server error: {}", e);
+        }
+    });
 
     // ── Periodic housekeeping ────────────────────────────────────────────────
     let mgr_tick = manager.clone();
