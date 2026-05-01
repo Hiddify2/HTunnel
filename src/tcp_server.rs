@@ -89,7 +89,7 @@ async fn handle_client(
     let active_tunnels_write = active_tunnels.clone();
 
     // Spawn task to forward responses from channel to TCP stream
-    let write_task = tokio::spawn(async move {
+    let mut write_task = tokio::spawn(async move {
         while let Some(packet) = tcp_rx.recv().await {
             let len = packet.len() as u32;
             let mut frame = BytesMut::with_capacity(4 + packet.len());

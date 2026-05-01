@@ -72,7 +72,7 @@ impl Tunnel {
         Instant::now().duration_since(self.last_active) > timeout
     }
 
-    fn apply_syn_ack(&mut self, syn_ack: &CandyPacket) -> bool {
+    fn apply_syn_ack(&mut self, _syn_ack: &CandyPacket) -> bool {
         if self.state != TunnelState::SynSent {
             return false;
         }
