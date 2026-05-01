@@ -91,7 +91,7 @@ async fn main() -> Result<()> {
     
     // Note: RawReceiver::spawn needs data_port and icmp_id.
     // In the new config, we'll use the port from the listen address.
-    let mut receiver = RawReceiver::spawn(listen_addr.port(), 0, allowed)?;
+    let mut receiver = RawReceiver::spawn(listen_addr.port(), allowed)?;
 
     // 3. Initialize TunnelManager
     let outbound = OutboundTransport::Socks5Uplink {

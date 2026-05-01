@@ -163,8 +163,7 @@ async fn handle_new_tunnel(
         .context("timeout waiting for CONNECT meta")?
         .context("tunnel closed before CONNECT meta")?;
 
-    let first_msg_bytes = first_msg.context("empty CONNECT meta")?;
-    let meta = String::from_utf8_lossy(&first_msg_bytes);
+    let meta = String::from_utf8_lossy(&first_msg);
     let (target_host, target_port) = parse_connect_meta(&meta)?;
 
     log::info!("tunnel {} forwarding to {}:{}", tunnel_id, target_host, target_port);
