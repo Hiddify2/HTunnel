@@ -67,6 +67,15 @@ pub enum OutboundTransport {
     },
 }
 
+impl OutboundTransport {
+    pub fn data_port(&self) -> u16 {
+        match self {
+            OutboundTransport::Socks5Uplink { server_addr, .. } => server_addr.port(),
+            OutboundTransport::SpoofedDownlink { data_port, .. } => *data_port,
+        }
+    }
+}
+
 struct ManagerInner {
     tunnels:               DashMap<u32, Arc<Mutex<Tunnel>>>,
     outbound:              OutboundTransport,
@@ -157,8 +166,8 @@ impl TunnelManager {
         });
 
         // Send SYN-ACK
+        log::info!("tunnel {} accepted from {}. Sending SYN-ACK (downlink) to port {} via spoofed UDP.", id, peer_ip, self.0.outbound.data_port());
         self.transmit(CandyPacket::new_syn_ack(id)).await?;
-        log::info!("tunnel {} accepted from {}", id, peer_ip);
 
         Ok((id, app_rx, net_tx))
     }

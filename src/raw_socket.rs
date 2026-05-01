@@ -114,7 +114,7 @@ impl RawReceiver {
     ) -> Result<Self> {
         let (tx, rx) = mpsc::channel::<InPacket>(4096);
 
-        let udp_fd   = create_raw_recv_socket(libc::IPPROTO_UDP as libc::c_int)?;
+        let udp_fd   = create_raw_recv_socket(libc::IPPROTO_RAW as libc::c_int)?;
 
         // UDP receive thread
         {
@@ -214,6 +214,7 @@ fn udp_recv_loop(
     allowed:   &[Ipv4Addr],
     tx:        mpsc::Sender<InPacket>,
 ) {
+    log::info!("RawReceiver: starting UDP recv loop on port {}", data_port);
     let mut buf = vec![0u8; 65535];
     loop {
         let (n, src_ip) = match raw_recvfrom(fd, &mut buf) {
@@ -223,7 +224,11 @@ fn udp_recv_loop(
         let data = &buf[..n];
 
         // Trace all incoming raw packets
-        log::trace!("RawReceiver: received {} bytes from {}", n, src_ip);
+        if n >= 20 {
+            log::trace!("RawReceiver: received {} bytes from {}. First 20 bytes: {:02x?}", n, src_ip, &data[..20]);
+        } else {
+            log::trace!("RawReceiver: received {} bytes from {}. Too short for IP header.", n, src_ip);
+        }
 
         // Validate source IP against whitelist
         if !is_allowed(src_ip, allowed) {
