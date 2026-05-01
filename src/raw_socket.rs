@@ -152,7 +152,12 @@ pub fn create_raw_send_socket() -> Result<RawFd> {
             libc::IP_HDRINCL,
             &one as *const _ as *const libc::c_void,
             std::mem::size_of_val(&one) as libc::socklen_t,
-        );
+        )
+    };
+    if res < 0 {
+        let err = std::io::Error::last_os_error();
+        unsafe { libc::close(fd) };
+        return Err(err).context("setsockopt(IP_HDRINCL) failed");
     }
     Ok(fd)
 }
