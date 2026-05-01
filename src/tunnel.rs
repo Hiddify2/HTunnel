@@ -192,10 +192,14 @@ impl TunnelManager {
             }
             PacketKind::Data => {
                 if let Some(t) = self.0.tunnels.get(&pkt.tunnel_id) {
-                    let mut t = t.lock().await;
-                    t.touch();
-                    if let Err(_) = t.app_tx.try_send(pkt.payload) {
-                        log::warn!("tunnel {} app_tx full, dropping data", pkt.tunnel_id);
+                    let app_tx = {
+                        let mut t = t.lock().await;
+                        t.touch();
+                        t.app_tx.clone()
+                    };
+
+                    if let Err(_) = app_tx.send(pkt.payload).await {
+                        log::warn!("tunnel {} app_tx closed, dropping data", pkt.tunnel_id);
                     }
                 } else {
                     log::debug!("tunnel {} missing for DATA", pkt.tunnel_id);
