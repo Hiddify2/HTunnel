@@ -39,7 +39,7 @@ impl Tunnel {
         peer_ip: Ipv4Addr,
     ) -> Self {
         Self {
-            id,
+            _id: id,
             state,
             app_tx,
             last_active: Instant::now(),
