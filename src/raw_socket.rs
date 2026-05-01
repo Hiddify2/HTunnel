@@ -114,7 +114,7 @@ impl RawReceiver {
     ) -> Result<Self> {
         let (tx, rx) = mpsc::channel::<InPacket>(4096);
 
-        let udp_fd   = create_raw_recv_socket(libc::IPPROTO_RAW as libc::c_int)?;
+        let udp_fd   = create_raw_recv_socket(libc::IPPROTO_UDP as libc::c_int)?;
 
         // UDP receive thread
         {
@@ -221,6 +221,7 @@ fn udp_recv_loop(
             Ok(v)  => v,
             Err(e) => { log::warn!("udp recvfrom: {}", e); continue; }
         };
+        log::trace!("RawReceiver: raw recvfrom returned {} bytes from {}", n, src_ip);
         let data = &buf[..n];
 
         // Trace all incoming raw packets
