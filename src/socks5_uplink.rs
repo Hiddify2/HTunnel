@@ -105,6 +105,7 @@ impl Socks5Uplink {
 
     /// Send a payload through the SOCKS5 UDP relay.
     pub async fn send_to(&self, payload: &[u8], target: SocketAddr) -> Result<()> {
+        log::trace!("Socks5Uplink: sending {} bytes to target {}", payload.len(), target);
         let mut pkt = BytesMut::with_capacity(10 + payload.len());
         // SOCKS5 UDP Header
         pkt.put_u16(0); // RSV
