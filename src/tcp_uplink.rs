@@ -6,7 +6,7 @@
 use std::net::{Ipv4Addr, SocketAddr};
 use anyhow::{bail, Context, Result};
 use bytes::{Bytes, BytesMut};
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::io::{AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use tokio::net::TcpStream;
 use tokio::sync::mpsc;
 
@@ -154,7 +154,10 @@ async fn perform_socks5_connect(
 /// Send a framed packet over the TCP stream.
 ///
 /// Frame format: 4 bytes (big-endian length) + payload
-async fn send_framed_packet(stream: &mut TcpStream, packet: &[u8]) -> Result<()> {
+async fn send_framed_packet<W>(stream: &mut W, packet: &[u8]) -> Result<()>
+where
+    W: AsyncWrite + Unpin,
+{
     let len = packet.len() as u32;
     let mut frame = BytesMut::with_capacity(4 + packet.len());
     frame.extend_from_slice(&len.to_be_bytes());
