@@ -12,7 +12,7 @@
 //! async Tokio world.  Each spawns background `std::thread`s that communicate
 //! with the Tokio task graph through `tokio::sync::mpsc` channels.
 
-use std::net::Ipv4Addr;
+use std::net::{Ipv4Addr, UdpSocket};
 use std::os::unix::io::RawFd;
 
 use anyhow::{Context, Result};
@@ -114,7 +114,7 @@ impl RawReceiver {
     ) -> Result<Self> {
         let (tx, rx) = mpsc::channel::<InPacket>(4096);
 
-        let udp_fd   = create_raw_recv_socket(libc::IPPROTO_UDP as libc::c_int)?;
+        let udp_sock = create_udp_recv_socket(data_port)?;
 
         // UDP receive thread
         {
@@ -123,7 +123,7 @@ impl RawReceiver {
             std::thread::Builder::new()
                 .name("raw-recv-udp".into())
                 .spawn(move || {
-                    udp_recv_loop(udp_fd, data_port, &allowed2, tx2);
+                    udp_recv_loop(udp_sock, data_port, &allowed2, tx2);
                 })
                 .context("spawn udp recv thread")?;
         }
@@ -163,13 +163,11 @@ pub fn create_raw_send_socket() -> Result<RawFd> {
     Ok(fd)
 }
 
-fn create_raw_recv_socket(proto: libc::c_int) -> Result<RawFd> {
-    let fd = unsafe { libc::socket(libc::AF_INET, libc::SOCK_RAW, proto) };
-    if fd < 0 {
-        return Err(std::io::Error::last_os_error())
-            .context("socket(AF_INET, SOCK_RAW, …) failed – CAP_NET_RAW required");
-    }
-    Ok(fd)
+fn create_udp_recv_socket(data_port: u16) -> Result<UdpSocket> {
+    let sock = UdpSocket::bind((Ipv4Addr::UNSPECIFIED, data_port))
+        .context("bind UDP receive socket")?;
+    sock.set_nonblocking(false).context("configure UDP receive socket")?;
+    Ok(sock)
 }
 
 // ── Packet transmission ───────────────────────────────────────────────────────
@@ -208,28 +206,25 @@ fn raw_sendto(fd: RawFd, data: &[u8], dst: Ipv4Addr) -> Result<()> {
 
 // ── Packet reception loops ────────────────────────────────────────────────────
 
-fn udp_recv_loop(
-    fd:        RawFd,
-    data_port: u16,
-    allowed:   &[Ipv4Addr],
-    tx:        mpsc::Sender<InPacket>,
-) {
+fn udp_recv_loop(sock: UdpSocket, data_port: u16, allowed: &[Ipv4Addr], tx: mpsc::Sender<InPacket>) {
     log::info!("RawReceiver: starting UDP recv loop on port {}", data_port);
     let mut buf = vec![0u8; 65535];
     loop {
-        let (n, src_ip) = match raw_recvfrom(fd, &mut buf) {
+        let (n, src_addr) = match sock.recv_from(&mut buf) {
             Ok(v)  => v,
             Err(e) => { log::warn!("udp recvfrom: {}", e); continue; }
         };
-        log::trace!("RawReceiver: raw recvfrom returned {} bytes from {}", n, src_ip);
+        let src_ip = match src_addr {
+            std::net::SocketAddr::V4(v4) => *v4.ip(),
+            std::net::SocketAddr::V6(_) => {
+                log::trace!("RawReceiver: dropping IPv6 packet from {}", src_addr);
+                continue;
+            }
+        };
+        log::trace!("RawReceiver: recv_from returned {} bytes from {}", n, src_ip);
         let data = &buf[..n];
 
-        // Trace all incoming raw packets
-        if n >= 20 {
-            log::trace!("RawReceiver: received {} bytes from {}. First 20 bytes: {:02x?}", n, src_ip, &data[..20]);
-        } else {
-            log::trace!("RawReceiver: received {} bytes from {}. Too short for IP header.", n, src_ip);
-        }
+        log::trace!("RawReceiver: received {} bytes from {}. First 20 bytes: {:02x?}", n, src_ip, &data[..data.len().min(20)]);
 
         // Validate source IP against whitelist
         if !is_allowed(src_ip, allowed) {
@@ -237,27 +232,9 @@ fn udp_recv_loop(
             continue;
         }
 
-        // Parse IP header (variable-length)
-        if data.len() < 20 { continue; }
-        let ihl = ((data[0] & 0x0f) as usize) * 4;
-        if data.len() < ihl + UDP_HDR_LEN {
-            log::trace!("RawReceiver: packet too short for IP+UDP: {} bytes", data.len());
-            continue;
-        }
-        let udp_data = &data[ihl..];
+        log::trace!("RawReceiver: accepted packet from {}, payload {} bytes", src_ip, data.len());
 
-        // Check destination port
-        let dst_port = u16::from_be_bytes([udp_data[2], udp_data[3]]);
-        if dst_port != data_port {
-            log::trace!("RawReceiver: dropping packet with wrong dst port: {} (expected {})", dst_port, data_port);
-            continue;
-        }
-
-        // UDP payload starts at offset 8
-        let payload_len = udp_data.len() - UDP_HDR_LEN;
-        log::trace!("RawReceiver: accepted packet from {}, payload {} bytes", src_ip, payload_len);
-        
-        let payload = bytes::Bytes::copy_from_slice(&udp_data[UDP_HDR_LEN..]);
+        let payload = bytes::Bytes::copy_from_slice(data);
         match CandyPacket::decode(payload) {
             Ok(pkt) => {
                 let _ = tx.blocking_send(InPacket { src_ip, pkt });
@@ -265,27 +242,6 @@ fn udp_recv_loop(
             Err(e) => log::trace!("RawReceiver: candy decode error: {}", e),
         }
     }
-}
-
-
-fn raw_recvfrom(fd: RawFd, buf: &mut [u8]) -> Result<(usize, Ipv4Addr)> {
-    let mut addr: libc::sockaddr_in = unsafe { std::mem::zeroed() };
-    let mut addrlen = std::mem::size_of::<libc::sockaddr_in>() as libc::socklen_t;
-    let n = unsafe {
-        libc::recvfrom(
-            fd,
-            buf.as_mut_ptr() as *mut libc::c_void,
-            buf.len(),
-            0,
-            &mut addr as *mut libc::sockaddr_in as *mut libc::sockaddr,
-            &mut addrlen,
-        )
-    };
-    if n < 0 {
-        return Err(std::io::Error::last_os_error()).context("recvfrom failed");
-    }
-    let ip = Ipv4Addr::from(u32::from_be(addr.sin_addr.s_addr));
-    Ok((n as usize, ip))
 }
 
 fn is_allowed(ip: Ipv4Addr, allowed: &[Ipv4Addr]) -> bool {
