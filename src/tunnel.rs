@@ -569,9 +569,10 @@ impl TunnelManager {
             }
             OutboundTransport::SpoofedDownlink { sender, local_spoofs, data_port } => {
                 let peer_ip = {
-                    let t = self.0.tunnels.get(&pkt.tunnel_id)
+                    let arc = self.0.tunnels.get(&pkt.tunnel_id)
+                        .map(|r| r.value().clone())
                         .ok_or_else(|| anyhow!("tunnel {} missing during transmit", pkt.tunnel_id))?;
-                    t.lock().await.peer_ip
+                    arc.lock().await.peer_ip
                 };
                 
                 // Pick a spoofed IP from the pool (simple rotation based on tunnel_id and packet seq)
