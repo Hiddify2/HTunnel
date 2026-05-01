@@ -9,12 +9,11 @@ use std::net::{Ipv4Addr, SocketAddr};
 
 use anyhow::{Context, Result, bail};
 use clap::Parser;
-use tokio::net::UdpSocket;
 
 use HTunnel::config::{Config, OutboundConfig, ClientUplinkConfig, ClientDownlinkConfig, DEFAULT_MTU};
+use HTunnel::raw_socket::RawReceiver;
 use HTunnel::socks5_uplink::Socks5Uplink;
 use HTunnel::tunnel::{OutboundTransport, TunnelManager};
-use HTunnel::packet::CandyPacket;
 
 #[derive(Parser, Debug)]
 #[command(name = "client", about = "HTunnel client")]
@@ -64,8 +63,8 @@ async fn main() -> Result<()> {
         }
     };
 
-    // 2. Setup UDP Socket for Downlink
-    let (_transport, listen_addr_str, _excepted_ips) = match downlink_cfg {
+    // 2. Setup Raw Receiver for Downlink
+    let (_transport, listen_addr_str, excepted_ips) = match downlink_cfg {
         ClientDownlinkConfig::Fake { transport, listen, excepted_fake_ip_pool } => {
             (transport, listen, excepted_fake_ip_pool)
         }
@@ -74,9 +73,16 @@ async fn main() -> Result<()> {
     let listen_addr: SocketAddr = listen_addr_str.parse()
         .with_context(|| format!("Invalid downlink listen address: {}", listen_addr_str))?;
 
-    log::info!("Downlink UdpSocket listening on {}", listen_addr);
-    let downlink_udp = UdpSocket::bind(listen_addr).await
-        .context("Failed to bind downlink UDP socket")?;
+    let mut allowed = excepted_ips.clone();
+    if allowed.is_empty() {
+        allowed.push(Ipv4Addr::UNSPECIFIED); // 0.0.0.0 means allow all
+    }
+    if let SocketAddr::V4(v4) = server_addr {
+        allowed.push(*v4.ip());
+    }
+
+    log::info!("Downlink RawReceiver listening on port {} (permissive: {})", listen_addr.port(), allowed.contains(&Ipv4Addr::UNSPECIFIED));
+    let mut receiver = RawReceiver::spawn(listen_addr.port(), allowed)?;
 
     // 3. Initialize TunnelManager
     let outbound = OutboundTransport::Socks5Uplink {
@@ -88,28 +94,9 @@ async fn main() -> Result<()> {
     // ── Background task: process incoming packets (Downlink) ──────────────────
     let mgr_recv = manager.clone();
     tokio::spawn(async move {
-        let mut buf = vec![0u8; 65535];
-        loop {
-            match downlink_udp.recv_from(&mut buf).await {
-                Ok((n, src_addr)) => {
-                    let src_ip = match src_addr {
-                        SocketAddr::V4(v4) => *v4.ip(),
-                        _ => Ipv4Addr::UNSPECIFIED,
-                    };
-                    
-                    let payload = bytes::Bytes::copy_from_slice(&buf[..n]);
-                    match CandyPacket::decode(payload) {
-                        Ok(pkt) => {
-                            if let Err(e) = mgr_recv.handle_incoming(src_ip, pkt).await {
-                                log::trace!("handle_incoming error: {}", e);
-                            }
-                        }
-                        Err(e) => log::trace!("Downlink decode error: {}", e),
-                    }
-                }
-                Err(e) => {
-                    log::warn!("Downlink UDP recv error: {}", e);
-                }
+        while let Some(incoming) = receiver.recv().await {
+            if let Err(e) = mgr_recv.handle_incoming(incoming.src_ip, incoming.pkt).await {
+                log::trace!("handle_incoming error: {}", e);
             }
         }
     });
