@@ -10,11 +10,11 @@ use std::net::{Ipv4Addr, SocketAddr};
 use anyhow::{Context, Result};
 use clap::Parser;
 
-use HTunnel::config::{Config, OutboundConfig, ClientUplinkConfig, ClientDownlinkConfig, DEFAULT_MTU, DEFAULT_CWND};
-use HTunnel::raw_socket::RawReceiver;
-use HTunnel::socks5::run_socks5;
-use HTunnel::socks5_uplink::Socks5Uplink;
-use HTunnel::tunnel::{OutboundTransport, TunnelManager};
+use htunnel::config::{Config, OutboundConfig, ClientUplinkConfig, ClientDownlinkConfig, DEFAULT_MTU, DEFAULT_CWND};
+use htunnel::raw_socket::RawReceiver;
+use htunnel::socks5::run_socks5_addr;
+use htunnel::socks5_uplink::Socks5Uplink;
+use htunnel::tunnel::{OutboundTransport, TunnelManager};
 
 #[derive(Parser, Debug)]
 #[command(name = "client", about = "HTunnel client")]

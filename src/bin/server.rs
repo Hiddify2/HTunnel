@@ -13,10 +13,10 @@ use clap::Parser;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpStream, UdpSocket};
 
-use HTunnel::config::{Config, InboundConfig, OutboundConfig, ServerDownlinkConfig, DEFAULT_MTU, DEFAULT_CWND};
-use HTunnel::raw_socket::RawSender;
-use HTunnel::tunnel::{OutboundTransport, TunnelManager};
-use HTunnel::packet::CandyPacket;
+use htunnel::config::{Config, InboundConfig, OutboundConfig, ServerDownlinkConfig, DEFAULT_MTU, DEFAULT_CWND};
+use htunnel::raw_socket::RawSender;
+use htunnel::tunnel::{OutboundTransport, TunnelManager};
+use htunnel::packet::CandyPacket;
 
 #[derive(Parser, Debug)]
 #[command(name = "server", about = "HTunnel server")]

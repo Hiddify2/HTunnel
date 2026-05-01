@@ -32,7 +32,6 @@ env_logger = "0.11"
 # Packet building/parsing
 pnet = "0.35"
 pnet_packet = "0.35"
-pnet_transport = "0.35"
 
 # Low-level OS interfaces
 libc = "0.2"

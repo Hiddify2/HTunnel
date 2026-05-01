@@ -305,10 +305,6 @@ pub fn build_udp_packet(
     buf
 }
 
-    fill_ipv4_header(&mut buf, src_ip, dst_ip, IpNextHeaderProtocols::Udp, ip_total);
-    buf
-}
-
 fn fill_ipv4_header(
     buf:      &mut [u8],
     src_ip:   Ipv4Addr,

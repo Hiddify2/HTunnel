@@ -12,7 +12,6 @@ use bytes::Bytes;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
 
-// use crate::config::Config; // removed dependency on old config struct
 use crate::tunnel::TunnelManager;
 
 // SOCKS5 constants
