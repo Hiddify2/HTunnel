@@ -13,7 +13,6 @@ use std::time::Duration;
 use anyhow::{bail, Result};
 use bytes::Bytes;
 use clap::Parser;
-use rand::{distributions::Alphanumeric, Rng};
 use tokio::sync::mpsc;
 
 use HTunnel::config::Config;

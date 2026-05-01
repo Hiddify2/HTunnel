@@ -4,11 +4,11 @@
 //! connections. For each client, packets are read from the TCP stream and
 //! fed into the tunnel manager.
 
-use std::net::{Ipv4Addr, SocketAddr};
+use std::net::SocketAddr;
 use std::sync::Arc;
 use anyhow::{Context, Result};
 use bytes::{Bytes, BytesMut};
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::io::AsyncReadExt;
 use tokio::net::{TcpListener, TcpStream};
 
 use crate::config::Config;
