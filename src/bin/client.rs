@@ -11,6 +11,7 @@ use anyhow::{Context, Result, bail};
 use clap::Parser;
 
 use HTunnel::config::{Config, OutboundConfig, ClientUplinkConfig, ClientDownlinkConfig, DEFAULT_MTU};
+use HTunnel::raw_socket::RawReceiver;
 use HTunnel::socks5_uplink::Socks5Uplink;
 use HTunnel::tunnel::{OutboundTransport, TunnelManager};
 
