@@ -210,18 +210,28 @@ impl TunnelManager {
     }
 
     pub async fn wait_established(&self, id: u32, timeout: Duration) -> bool {
-        tokio::time::timeout(timeout, self.is_established(id)).await.unwrap_or(false)
+        let deadline = Instant::now() + timeout;
+
+        loop {
+            if self.is_established(id).await {
+                return true;
+            }
+
+            let now = Instant::now();
+            if now >= deadline {
+                return false;
+            }
+
+            let remaining = deadline.saturating_duration_since(now);
+            let sleep_for = remaining.min(Duration::from_millis(10));
+            tokio::time::sleep(sleep_for).await;
+        }
     }
 
     pub async fn is_established(&self, id: u32) -> bool {
         if let Some(t) = self.0.tunnels.get(&id) {
             let t = t.lock().await;
             if t.state == TunnelState::Established { return true; }
-        }
-        if let Some(n) = self.0.established_notifiers.get(&id) {
-            let n = n.clone();
-            n.notified().await;
-            return true;
         }
         false
     }
