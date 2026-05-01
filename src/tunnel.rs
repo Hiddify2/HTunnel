@@ -163,17 +163,21 @@ impl TunnelManager {
         Ok((id, app_rx, net_tx))
     }
 
-    pub async fn handle_incoming(&self, src_ip: Ipv4Addr, pkt: CandyPacket) -> Result<Option<(CandyPacket, Ipv4Addr)>> {
+    pub async fn handle_incoming(&self, _src_ip: Ipv4Addr, pkt: CandyPacket) -> Result<Option<(CandyPacket, Ipv4Addr)>> {
+        log::trace!("TunnelManager: handle_incoming kind={:?} id={}", pkt.kind, pkt.tunnel_id);
         match pkt.kind {
-            PacketKind::Syn => Ok(Some((pkt, src_ip))),
+            PacketKind::Syn => Ok(Some((pkt, _src_ip))),
             PacketKind::SynAck => {
                 if let Some(t) = self.0.tunnels.get(&pkt.tunnel_id) {
                     let mut t = t.lock().await;
                     if t.state == TunnelState::SynSent {
                         t.state = TunnelState::Established;
                         t.established_notify.notify_waiters();
+                        log::info!("tunnel {} established", pkt.tunnel_id);
                     }
                     t.touch();
+                } else {
+                    log::debug!("tunnel {} missing for SYN-ACK", pkt.tunnel_id);
                 }
                 Ok(None)
             }
@@ -181,7 +185,11 @@ impl TunnelManager {
                 if let Some(t) = self.0.tunnels.get(&pkt.tunnel_id) {
                     let mut t = t.lock().await;
                     t.touch();
-                    let _ = t.app_tx.try_send(pkt.payload);
+                    if let Err(_) = t.app_tx.try_send(pkt.payload) {
+                        log::warn!("tunnel {} app_tx full, dropping data", pkt.tunnel_id);
+                    }
+                } else {
+                    log::debug!("tunnel {} missing for DATA", pkt.tunnel_id);
                 }
                 Ok(None)
             }
@@ -233,6 +241,7 @@ impl TunnelManager {
     }
 
     async fn transmit(&self, pkt: CandyPacket) -> Result<()> {
+        log::trace!("TunnelManager: transmit kind={:?} id={}", pkt.kind, pkt.tunnel_id);
         match &self.0.outbound {
             OutboundTransport::Socks5Uplink { relay, server_addr } => {
                 let enc = pkt.encode();
