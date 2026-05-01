@@ -78,7 +78,7 @@ impl RawSender {
             .spawn(move || {
                 while let Some(out) = rx.blocking_recv() {
                     if let Err(e) = send_out_packet(fd, out) {
-                        log::warn!("raw-send error: {}", e);
+                        log::warn!("raw-send error: {:#} (check CAP_NET_RAW and IP routing)", e);
                     }
                 }
                 unsafe { libc::close(fd) };
@@ -138,15 +138,14 @@ impl RawReceiver {
 
 // ── Socket creation helpers ───────────────────────────────────────────────────
 
-fn create_raw_send_socket() -> Result<RawFd> {
-    let fd = unsafe { libc::socket(libc::AF_INET, libc::SOCK_RAW, libc::IPPROTO_RAW) };
+pub fn create_raw_send_socket() -> Result<RawFd> {
+    let fd = unsafe { libc::socket(libc::AF_INET, libc::SOCK_RAW, libc::IPPROTO_UDP) };
     if fd < 0 {
-        return Err(std::io::Error::last_os_error())
-            .context("socket(AF_INET, SOCK_RAW, IPPROTO_RAW) failed – CAP_NET_RAW required");
+        return Err(std::io::Error::last_os_error()).context("create_raw_send_socket failed");
     }
-    // Tell the kernel we are supplying the IP header ourselves.
+
     let one: libc::c_int = 1;
-    unsafe {
+    let res = unsafe {
         libc::setsockopt(
             fd,
             libc::IPPROTO_IP,
@@ -195,7 +194,8 @@ fn raw_sendto(fd: RawFd, data: &[u8], dst: Ipv4Addr) -> Result<()> {
         )
     };
     if n < 0 {
-        return Err(std::io::Error::last_os_error()).context("sendto failed");
+        let err = std::io::Error::last_os_error();
+        return Err(anyhow::anyhow!("sendto to {} failed: {}", dst, err));
     }
     Ok(())
 }
