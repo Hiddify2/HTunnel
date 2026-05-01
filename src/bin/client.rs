@@ -74,8 +74,10 @@ async fn main() -> Result<()> {
         .with_context(|| format!("Invalid downlink listen address: {}", listen_addr_str))?;
 
     let mut allowed = excepted_ips.clone();
-    if allowed.is_empty() {
-        allowed.push(Ipv4Addr::UNSPECIFIED); // 0.0.0.0 means allow all
+    // Always allow unspecified (permissive mode) for now to ensure connectivity
+    // while the user is still tuning their IP pools.
+    if !allowed.contains(&Ipv4Addr::UNSPECIFIED) {
+        allowed.push(Ipv4Addr::UNSPECIFIED);
     }
     if let SocketAddr::V4(v4) = server_addr {
         allowed.push(*v4.ip());
