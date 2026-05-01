@@ -114,12 +114,6 @@ struct Inner {
     sender:  RawSender,
     addr:    PeerAddr,
     cfg:     Arc<Config>,
-    /// Optional uplink channel (client-side) used to send encoded packets
-    /// over a TCP uplink to the server instead of raw spoofed UDP.
-    uplink:  Option<mpsc::Sender<Bytes>>,
-    /// Server-side: per-tunnel TCP response channels for sending packets
-    /// back through the TCP connection (for tunnels received via TCP uplink).
-    tcp_responses: DashMap<u32, mpsc::Sender<Bytes>>,
 }
 
 /// Manages all active tunnels.  Cheaply cloneable (`Arc` inside).
@@ -127,27 +121,14 @@ struct Inner {
 pub struct TunnelManager(Arc<Inner>);
 
 impl TunnelManager {
-    pub fn new(sender: RawSender, addr: PeerAddr, cfg: Arc<Config>, uplink: Option<mpsc::Sender<Bytes>>) -> Self {
+    pub fn new(sender: RawSender, addr: PeerAddr, cfg: Arc<Config>) -> Self {
         Self(Arc::new(Inner {
             tunnels:               DashMap::new(),
             established_notifiers: DashMap::new(),
             sender,
             addr,
             cfg,
-            uplink,
-            tcp_responses:         DashMap::new(),
         }))
-    }
-
-    /// Register a TCP response channel for a tunnel (server-side).
-    /// Used when a tunnel is accepted via TCP uplink to send responses back through the same connection.
-    pub fn register_tcp_response(&self, tunnel_id: u32, tx: mpsc::Sender<Bytes>) {
-        self.0.tcp_responses.insert(tunnel_id, tx);
-    }
-
-    /// Remove the TCP response channel for a tunnel.
-    pub fn remove_tcp_response(&self, tunnel_id: u32) {
-        self.0.tcp_responses.remove(&tunnel_id);
     }
 
     // ── Tunnel lifecycle ──────────────────────────────────────────────────────
@@ -233,7 +214,6 @@ impl TunnelManager {
             t.state = TunnelState::Closed;
         }
         self.0.established_notifiers.remove(&id);
-        self.0.tcp_responses.remove(&id);
 
         let fin = CandyPacket::new_fin(id);
         let _ = self.tx_control(fin).await;
@@ -447,24 +427,7 @@ impl TunnelManager {
         let a   = &self.0.addr;
         let enc = pkt.encode();
 
-        // Server-side: if this tunnel has a TCP response channel registered,
-        // send the encoded packet back through the TCP connection.
-        if a.is_server {
-            if let Some(tx) = self.0.tcp_responses.get(&pkt.tunnel_id) {
-                tx.send(enc).await.map_err(|_| anyhow!("TCP response channel closed"))?;
-                return Ok(());
-            }
-        }
-
-        // Client-side: if protocol is UDP and an uplink channel is configured,
-        // send the encoded packet over the TCP uplink instead of raw spoofed UDP.
-        if self.0.cfg.protocol == TunnelProtocol::Udp && !a.is_server {
-            if let Some(uplink) = &self.0.uplink {
-                uplink.send(enc).await.map_err(|_| anyhow!("uplink channel closed"))?;
-                return Ok(());
-            }
-        }
-
+        // Pure UDP: always use raw socket, never TCP uplink
         let out = match self.0.cfg.protocol {
             TunnelProtocol::Udp => OutPacket::Udp {
                 src_ip:   a.local_spoof,

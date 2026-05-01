@@ -16,10 +16,9 @@ use bytes::Bytes;
 use clap::Parser;
 use tokio::sync::mpsc;
 
-use HTunnel::config::{Config, OutboundMode};
+use HTunnel::config::Config;
 use HTunnel::raw_socket::{RawReceiver, RawSender};
 use HTunnel::socks5::run_socks5;
-use HTunnel::tcp_uplink::spawn_tcp_uplink;
 use HTunnel::tun::TunDevice;
 use HTunnel::tun_bridge::{
     run_tun_reader, spawn_tun_writer, spawn_tunnel_to_tun, TunnelPool,
@@ -75,22 +74,8 @@ async fn main() -> Result<()> {
         icmp_id:     cfg.icmp_id,
         is_server:   false,
     };
-    // Create an uplink channel (client) for TCP-encapsulated upload to server.
-    let (uplink_tx, uplink_rx) = mpsc::channel::<Bytes>(4096);
-    let manager = TunnelManager::new(sender, peer_addr, cfg.clone(), Some(uplink_tx));
-
-    // ── Spawn TCP uplink task if upstream proxy is configured ─────────────────
-    if let Some(OutboundMode::Socks { server, port }) = &cfg.client_uplink {
-        let upstream = format!("{}:{}", server, port);
-        let server_addr = cfg.peer_real_ip;
-        let server_port = cfg.data_port;
-        let mgr_uplink = manager.clone();
-        tokio::spawn(async move {
-            if let Err(e) = spawn_tcp_uplink(&upstream, server_addr, server_port, uplink_rx, mgr_uplink).await {
-                log::error!("TCP uplink failed: {}", e);
-            }
-        });
-    }
+    // Pure UDP: no uplink channel
+    let manager = TunnelManager::new(sender, peer_addr, cfg.clone());
 
     // ── Spawn local SOCKS5 proxy for application connections ──────────────────
     if cfg.socks_listen.is_some() {

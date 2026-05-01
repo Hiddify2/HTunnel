@@ -23,7 +23,6 @@ use HTunnel::tun_bridge::{
 };
 use HTunnel::tunnel::{PeerAddr, TunnelManager};
 use HTunnel::udp_listener::run_udp_listener;
-use HTunnel::tcp_server::run_tcp_server;
 
 #[derive(Parser, Debug)]
 #[command(name = "server", about = "HTunnel server (tunnel endpoint)")]
@@ -67,7 +66,7 @@ async fn main() -> Result<()> {
         icmp_id:     cfg.icmp_id,
         is_server:   true,
     };
-    let manager = TunnelManager::new(sender, peer_addr, cfg.clone(), None);
+    let manager = TunnelManager::new(sender, peer_addr, cfg.clone());
 
     let tun_mtu = if cfg.tun_mtu == 0 { cfg.mtu } else { cfg.tun_mtu.min(cfg.mtu) };
     if cfg.tun_mtu > cfg.mtu {
@@ -104,7 +103,7 @@ async fn main() -> Result<()> {
         tun.mtu()
     );
 
-    // ── Spawn UDP listener for direct UDP packets ────────────────────────────
+    // ── Spawn UDP listener for incoming tunnel packets ────────────────────────
     let cfg_udp = cfg.clone();
     let mgr_udp = manager.clone();
     let pool_udp = pool.clone();
@@ -112,17 +111,6 @@ async fn main() -> Result<()> {
     tokio::spawn(async move {
         if let Err(e) = run_udp_listener(cfg_udp, mgr_udp, pool_udp, tx_udp).await {
             log::error!("UDP listener error: {}", e);
-        }
-    });
-
-    // ── Spawn TCP server for SOCKS tunnel clients ────────────────────────────
-    let cfg_tcp = cfg.clone();
-    let mgr_tcp = manager.clone();
-    let pool_tcp = pool.clone();
-    let tx_tcp = net_to_tun_tx.clone();
-    tokio::spawn(async move {
-        if let Err(e) = run_tcp_server(cfg_tcp, mgr_tcp, pool_tcp, tx_tcp).await {
-            log::error!("TCP server error: {}", e);
         }
     });
 
