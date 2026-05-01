@@ -36,15 +36,19 @@ pub async fn spawn_socks5_udp_relay(
 
     log::info!("Connected to upstream SOCKS proxy at {}", upstream_addr);
 
-    perform_socks5_auth(&mut control).await?;
-    perform_socks5_udp_associate(&mut control).await?;
-
-    let relay_addr = read_udp_relay_addr(&mut control).await?;
-    log::info!("SOCKS5 UDP relay established at {}", relay_addr);
-
     let socket = UdpSocket::bind((Ipv4Addr::UNSPECIFIED, 0))
         .await
         .context("bind UDP socket for SOCKS relay")?;
+    let local_udp_addr = socket
+        .local_addr()
+        .context("read local UDP relay address")?;
+
+    perform_socks5_auth(&mut control).await?;
+    perform_socks5_udp_associate(&mut control, local_udp_addr).await?;
+
+    let relay_addr = read_udp_relay_addr(&mut control).await?;
+    log::info!("SOCKS5 UDP relay established at {}", relay_addr);
+    socket.connect(relay_addr).await.context("connect SOCKS relay socket")?;
 
     let mut recv_buf = vec![0u8; 65535];
     loop {
@@ -54,7 +58,7 @@ pub async fn spawn_socks5_udp_relay(
                     Some(packet) => {
                         let framed = build_socks5_udp_frame(server_addr, server_port, &packet);
                         socket
-                            .send_to(&framed, relay_addr)
+                            .send(&framed)
                             .await
                             .context("send UDP datagram through SOCKS relay")?;
                     }
@@ -96,11 +100,18 @@ async fn perform_socks5_auth(stream: &mut TcpStream) -> Result<()> {
     Ok(())
 }
 
-async fn perform_socks5_udp_associate(stream: &mut TcpStream) -> Result<()> {
+async fn perform_socks5_udp_associate(stream: &mut TcpStream, client_udp_addr: SocketAddr) -> Result<()> {
     let mut req = BytesMut::with_capacity(10);
     req.extend_from_slice(&[SOCKS5_VERSION, SOCKS5_CMD_UDP_ASSOCIATE, 0x00, ATYP_IPV4]);
-    req.extend_from_slice(&[0, 0, 0, 0]);
-    req.extend_from_slice(&0u16.to_be_bytes());
+    match client_udp_addr {
+        SocketAddr::V4(addr) => {
+            req.extend_from_slice(&addr.ip().octets());
+            req.extend_from_slice(&addr.port().to_be_bytes());
+        }
+        SocketAddr::V6(_) => {
+            bail!("IPv6 UDP relay sockets are not supported");
+        }
+    }
     stream.write_all(&req).await?;
     Ok(())
 }
