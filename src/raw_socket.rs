@@ -222,15 +222,20 @@ fn udp_recv_loop(
         };
         let data = &buf[..n];
 
+        // Trace all incoming raw packets
+        log::trace!("RawReceiver: received {} bytes from {}", n, src_ip);
+
         // Validate source IP against whitelist
         if !is_allowed(src_ip, allowed) {
-            log::trace!("dropping udp packet from unauthorized ip: {}", src_ip);
+            log::trace!("RawReceiver: dropping packet from unauthorized ip: {}", src_ip);
             continue;
         }
 
         // Parse IP header (variable-length)
+        if data.len() < 20 { continue; }
         let ihl = ((data[0] & 0x0f) as usize) * 4;
         if data.len() < ihl + UDP_HDR_LEN {
+            log::trace!("RawReceiver: packet too short for IP+UDP: {} bytes", data.len());
             continue;
         }
         let udp_data = &data[ihl..];
@@ -238,20 +243,20 @@ fn udp_recv_loop(
         // Check destination port
         let dst_port = u16::from_be_bytes([udp_data[2], udp_data[3]]);
         if dst_port != data_port {
-            log::trace!("dropping udp packet with wrong dst port: {} (expected {})", dst_port, data_port);
+            log::trace!("RawReceiver: dropping packet with wrong dst port: {} (expected {})", dst_port, data_port);
             continue;
         }
 
         // UDP payload starts at offset 8
-        if udp_data.len() < UDP_HDR_LEN {
-            continue;
-        }
+        let payload_len = udp_data.len() - UDP_HDR_LEN;
+        log::trace!("RawReceiver: accepted packet from {}, payload {} bytes", src_ip, payload_len);
+        
         let payload = bytes::Bytes::copy_from_slice(&udp_data[UDP_HDR_LEN..]);
         match CandyPacket::decode(payload) {
             Ok(pkt) => {
                 let _ = tx.blocking_send(InPacket { src_ip, pkt });
             }
-            Err(e) => log::trace!("udp decode: {}", e),
+            Err(e) => log::trace!("RawReceiver: candy decode error: {}", e),
         }
     }
 }

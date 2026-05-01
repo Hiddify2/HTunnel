@@ -9,11 +9,12 @@ use std::net::{Ipv4Addr, SocketAddr};
 
 use anyhow::{Context, Result, bail};
 use clap::Parser;
+use tokio::net::UdpSocket;
 
 use HTunnel::config::{Config, OutboundConfig, ClientUplinkConfig, ClientDownlinkConfig, DEFAULT_MTU};
-use HTunnel::raw_socket::RawReceiver;
 use HTunnel::socks5_uplink::Socks5Uplink;
 use HTunnel::tunnel::{OutboundTransport, TunnelManager};
+use HTunnel::packet::CandyPacket;
 
 #[derive(Parser, Debug)]
 #[command(name = "client", about = "HTunnel client")]
@@ -63,8 +64,8 @@ async fn main() -> Result<()> {
         }
     };
 
-    // 2. Setup Raw Receiver for Downlink
-    let (transport, listen_addr_str, excepted_ips) = match downlink_cfg {
+    // 2. Setup UDP Socket for Downlink
+    let (_transport, listen_addr_str, _excepted_ips) = match downlink_cfg {
         ClientDownlinkConfig::Fake { transport, listen, excepted_fake_ip_pool } => {
             (transport, listen, excepted_fake_ip_pool)
         }
@@ -73,26 +74,9 @@ async fn main() -> Result<()> {
     let listen_addr: SocketAddr = listen_addr_str.parse()
         .with_context(|| format!("Invalid downlink listen address: {}", listen_addr_str))?;
 
-    // We only support UDP for fake transport in this refactor as per requirements.
-    if transport != "udp" {
-        bail!("Only 'udp' transport is supported for fake downlink");
-    }
-
-    // On the client, the RawReceiver listens for packets coming from the server.
-    // The server will use one of its spoofed IPs.
-    // For simplicity, we'll allow any IP for now, or we could filter by the server's real IP.
-    // The old code used allowed_peers.
-    let mut allowed = excepted_ips.clone();
-    if allowed.is_empty() {
-        log::info!("No excepted_fake_ip_pool provided, allowing all source IPs for downlink");
-        allowed.push(Ipv4Addr::UNSPECIFIED); // 0.0.0.0 means allow all in our new is_allowed
-    }
-    if let SocketAddr::V4(v4) = server_addr {
-        allowed.push(*v4.ip());
-    }
-    
-    log::info!("Downlink RawReceiver listening on port {} (allowing {:?})", listen_addr.port(), allowed);
-    let mut receiver = RawReceiver::spawn(listen_addr.port(), allowed)?;
+    log::info!("Downlink UdpSocket listening on {}", listen_addr);
+    let downlink_udp = UdpSocket::bind(listen_addr).await
+        .context("Failed to bind downlink UDP socket")?;
 
     // 3. Initialize TunnelManager
     let outbound = OutboundTransport::Socks5Uplink {
@@ -102,31 +86,47 @@ async fn main() -> Result<()> {
     let manager = TunnelManager::new(outbound);
 
     // ── Background task: process incoming packets (Downlink) ──────────────────
-    let mgr2 = manager.clone();
+    let mgr_recv = manager.clone();
     tokio::spawn(async move {
+        let mut buf = vec![0u8; 65535];
         loop {
-            if let Some(incoming) = receiver.recv().await {
-                if let Err(e) = mgr2.handle_incoming(incoming.src_ip, incoming.pkt).await {
-                    log::warn!("handle_incoming error: {}", e);
+            match downlink_udp.recv_from(&mut buf).await {
+                Ok((n, src_addr)) => {
+                    let src_ip = match src_addr {
+                        SocketAddr::V4(v4) => *v4.ip(),
+                        _ => Ipv4Addr::UNSPECIFIED,
+                    };
+                    
+                    let payload = bytes::Bytes::copy_from_slice(&buf[..n]);
+                    match CandyPacket::decode(payload) {
+                        Ok(pkt) => {
+                            if let Err(e) = mgr_recv.handle_incoming(src_ip, pkt).await {
+                                log::trace!("handle_incoming error: {}", e);
+                            }
+                        }
+                        Err(e) => log::trace!("Downlink decode error: {}", e),
+                    }
+                }
+                Err(e) => {
+                    log::warn!("Downlink UDP recv error: {}", e);
                 }
             }
         }
     });
 
     // ── Background task: periodic housekeeping ────────────────────────────────
-    let mgr3 = manager.clone();
+    let mgr_tick = manager.clone();
     tokio::spawn(async move {
         let mut interval = tokio::time::interval(Duration::from_millis(100));
         loop {
             interval.tick().await;
-            if let Err(e) = mgr3.tick().await {
+            if let Err(e) = mgr_tick.tick().await {
                 log::warn!("tick error: {}", e);
             }
         }
     });
 
-    // ── Foreground: SOCKS5 proxy (Inbound) ───────────────────────────────────
-    // Find the SOCKS inbound
+    // 4. Start Local SOCKS5 Proxy
     let socks_inbound = cfg.inbounds.iter().find_map(|i| {
         if let HTunnel::config::InboundConfig::Socks { listen } = i {
             Some(listen)
@@ -137,8 +137,7 @@ async fn main() -> Result<()> {
 
     let socks_listen_addr: SocketAddr = socks_inbound.parse()?;
     
-    // We need to adapt run_socks5 to the new config or just use the listen addr.
-    // For now, I'll modify run_socks5 to take a SocketAddr.
+    log::info!("SOCKS5 proxy starting on {}", socks_listen_addr);
     HTunnel::socks5::run_socks5_addr(socks_listen_addr, manager, DEFAULT_MTU).await?;
 
     Ok(())
