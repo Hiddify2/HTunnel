@@ -8,12 +8,9 @@ use std::time::Duration;
 use std::net::{Ipv4Addr, SocketAddr};
 
 use anyhow::{Context, Result, bail};
-use bytes::Bytes;
 use clap::Parser;
 
-use HTunnel::config::{Config, OutboundConfig, ClientUplinkConfig, ClientDownlinkConfig, DEFAULT_MTU, DEFAULT_CWND};
-use HTunnel::raw_socket::RawReceiver;
-use HTunnel::socks5::run_socks5_addr;
+use HTunnel::config::{Config, OutboundConfig, ClientUplinkConfig, ClientDownlinkConfig, DEFAULT_MTU};
 use HTunnel::socks5_uplink::Socks5Uplink;
 use HTunnel::tunnel::{OutboundTransport, TunnelManager};
 
@@ -40,7 +37,7 @@ async fn main() -> Result<()> {
     let htunnel_outbound = cfg.get_htunnel_outbound()
         .context("No HTunnel outbound found in config")?;
 
-    let (server_addr_str, encryption, uplink_cfg, downlink_cfg) = match htunnel_outbound {
+    let (server_addr_str, _encryption, uplink_cfg, downlink_cfg) = match htunnel_outbound {
         OutboundConfig::HTunnel { server, encryption, client_uplink, client_downlink } => {
             (server, encryption, client_uplink, client_downlink)
         }

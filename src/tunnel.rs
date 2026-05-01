@@ -23,7 +23,7 @@ pub enum TunnelState {
 }
 
 struct Tunnel {
-    id:          u32,
+    _id:          u32,
     state:       TunnelState,
     app_tx:      mpsc::Sender<Bytes>,
     last_active: Instant,

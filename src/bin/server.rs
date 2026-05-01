@@ -13,7 +13,7 @@ use clap::Parser;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpStream, UdpSocket};
 
-use HTunnel::config::{Config, InboundConfig, OutboundConfig, ServerDownlinkConfig};
+use HTunnel::config::{Config, InboundConfig, ServerDownlinkConfig, DEFAULT_MTU};
 use HTunnel::raw_socket::RawSender;
 use HTunnel::tunnel::{OutboundTransport, TunnelManager};
 use HTunnel::packet::CandyPacket;
