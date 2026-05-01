@@ -210,7 +210,7 @@ impl TunnelManager {
     }
 
     pub async fn close_tunnel(&self, id: u32) {
-        if let Some((_, t)) = self.0.tunnels.remove(&id) {
+        if let Some((_, _t)) = self.0.tunnels.remove(&id) {
             let _ = self.transmit(CandyPacket::new_fin(id)).await;
             log::info!("tunnel {} closed", id);
         }
@@ -218,7 +218,7 @@ impl TunnelManager {
     }
 
     pub async fn tick(&self) -> Result<()> {
-        let now = Instant::now();
+        let _now = Instant::now();
         let mut to_remove = Vec::new();
         for r in self.0.tunnels.iter() {
             let t = r.value().lock().await;
