@@ -6,9 +6,9 @@
 
 use std::net::SocketAddr;
 use std::sync::Arc;
-use anyhow::{Context, Result};
+use anyhow::{bail, Context, Result};
 use bytes::{Bytes, BytesMut};
-use tokio::io::AsyncReadExt;
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
 
 use crate::config::Config;
@@ -59,8 +59,9 @@ pub async fn run_tcp_server(
 /// Handle a single client connection.
 ///
 /// Reads framed tunnel packets and routes them to the tunnel manager.
+/// Also spawns a task to forward responses back through the TCP connection.
 async fn handle_client(
-    mut stream: TcpStream,
+    stream: TcpStream,
     peer_addr: SocketAddr,
     cfg: Arc<Config>,
     manager: TunnelManager,
@@ -77,80 +78,142 @@ async fn handle_client(
         }
     };
 
+    // Split the stream for bidirectional communication
+    let (mut tcp_reader, mut tcp_writer) = stream.into_split();
+
+    // Channel for sending responses back through TCP
+    let (tcp_tx, mut tcp_rx) = tokio::sync::mpsc::channel::<Bytes>(1024);
+
+    // Store active tunnel IDs to clean up on disconnect
+    let active_tunnels = Arc::new(std::sync::Mutex::new(Vec::<u32>::new()));
+    let active_tunnels_write = active_tunnels.clone();
+
+    // Spawn task to forward responses from channel to TCP stream
+    let write_task = tokio::spawn(async move {
+        while let Some(packet) = tcp_rx.recv().await {
+            let len = packet.len() as u32;
+            let mut frame = BytesMut::with_capacity(4 + packet.len());
+            frame.extend_from_slice(&len.to_be_bytes());
+            frame.extend_from_slice(&packet);
+
+            if let Err(e) = tcp_writer.write_all(&frame).await {
+                log::debug!("TCP write error: {}", e);
+                break;
+            }
+        }
+    });
+
     let mut buf = BytesMut::with_capacity(8192);
 
     loop {
-        // Read frame length (4 bytes)
-        if buf.len() < 4 {
-            let mut tmp = vec![0u8; 4096];
-            match stream.read(&mut tmp).await? {
-                0 => {
-                    log::info!("Client {} disconnected", peer_addr);
-                    break;
-                }
-                n => {
-                    buf.extend_from_slice(&tmp[..n]);
-                }
-            }
-        }
-
-        // Process complete frames
-        while buf.len() >= 4 {
-            let len = u32::from_be_bytes([buf[0], buf[1], buf[2], buf[3]]) as usize;
-
-            // Sanity check
-            if len > 65536 {
-                log::warn!("Frame length too large: {}", len);
-                return Ok(());
-            }
-
-            if buf.len() < 4 + len {
-                // Incomplete frame, read more
-                break;
-            }
-
-            // Extract frame payload
-            let payload = buf[4..4 + len].to_vec();
-            buf.advance(4 + len);
-
-            // Decode as CandyPacket
-            match CandyPacket::decode(Bytes::from(payload)) {
-                Ok(pkt) => {
-                    // Check peer whitelist
-                    if !cfg.is_peer_allowed(&client_ip) {
-                        log::trace!("Dropping packet from disallowed IP {}", client_ip);
-                        continue;
-                    }
-
-                    // Route packet through tunnel manager
-                    match manager.handle_incoming(client_ip, pkt).await {
-                        Ok(Some((syn_pkt, _))) => {
-                            // New tunnel SYN received - accept and add to pool for TUN forwarding
-                            match manager.accept_syn(syn_pkt, client_ip).await {
-                                Ok((tid, app_rx, net_tx)) => {
-                                    pool.add_tunnel(tid, net_tx).await;
-                                    spawn_tunnel_to_tun(app_rx, net_to_tun_tx.clone());
-                                    log::info!(
-                                        "Tunnel {} accepted from {} (TCP)",
-                                        tid, client_ip
-                                    );
+        tokio::select! {
+            // Handle incoming data from TCP
+            read_result = read_frame(&mut tcp_reader, &mut buf) => {
+                match read_result {
+                    Ok(Some(payload)) => {
+                        // Decode as CandyPacket
+                        match CandyPacket::decode(payload) {
+                            Ok(pkt) => {
+                                // Check peer whitelist
+                                if !cfg.is_peer_allowed(&client_ip) {
+                                    log::trace!("Dropping packet from disallowed IP {}", client_ip);
+                                    continue;
                                 }
-                                Err(e) => log::warn!("accept_syn error: {}", e),
+
+                                // Route packet through tunnel manager
+                                match manager.handle_incoming(client_ip, pkt).await {
+                                    Ok(Some((syn_pkt, _))) => {
+                                        // New tunnel SYN received - accept and add to pool
+                                        match manager.accept_syn(syn_pkt, client_ip).await {
+                                            Ok((tid, app_rx, net_tx)) => {
+                                                // Register TCP response channel for this tunnel
+                                                manager.register_tcp_response(tid, tcp_tx.clone());
+                                                active_tunnels_write.lock().unwrap().push(tid);
+
+                                                pool.add_tunnel(tid, net_tx).await;
+                                                spawn_tunnel_to_tun(app_rx, net_to_tun_tx.clone());
+                                                log::info!(
+                                                    "Tunnel {} accepted from {} (TCP)",
+                                                    tid, client_ip
+                                                );
+                                            }
+                                            Err(e) => log::warn!("accept_syn error: {}", e),
+                                        }
+                                    }
+                                    Ok(None) => {}
+                                    Err(e) => log::warn!("handle_incoming error: {}", e),
+                                }
+                            }
+                            Err(e) => {
+                                log::trace!("Failed to decode packet from {}: {}", client_ip, e);
                             }
                         }
-                        Ok(None) => {}
-                        Err(e) => log::warn!("handle_incoming error: {}", e),
+                    }
+                    Ok(None) => {
+                        log::info!("Client {} disconnected", peer_addr);
+                        break;
+                    }
+                    Err(e) => {
+                        log::debug!("TCP read error from {}: {}", peer_addr, e);
+                        break;
                     }
                 }
-                Err(e) => {
-                    log::trace!("Failed to decode packet from {}: {}", client_ip, e);
-                }
+            }
+            // If write task ends, we're done
+            _ = &mut write_task => {
+                break;
             }
         }
     }
 
+    // Clean up: unregister TCP response channels for all tunnels
+    let tunnels_to_clean = {
+        let guard = active_tunnels.lock().unwrap();
+        guard.clone()
+    };
+    for tid in tunnels_to_clean {
+        manager.remove_tcp_response(tid);
+    }
+
     log::info!("Client handler for {} finished", peer_addr);
     Ok(())
+}
+
+/// Read a framed packet from the TCP stream.
+/// Returns Ok(Some(payload)) on success, Ok(None) on EOF, Err on error.
+async fn read_frame(
+    reader: &mut tokio::net::tcp::OwnedReadHalf,
+    buf: &mut BytesMut,
+) -> Result<Option<Bytes>> {
+    // Ensure we have at least 4 bytes for length
+    while buf.len() < 4 {
+        let mut tmp = [0u8; 4096];
+        match reader.read(&mut tmp).await? {
+            0 => return Ok(None), // EOF
+            n => buf.extend_from_slice(&tmp[..n]),
+        }
+    }
+
+    let len = u32::from_be_bytes([buf[0], buf[1], buf[2], buf[3]]) as usize;
+
+    // Sanity check
+    if len > 65536 {
+        bail!("Frame length too large: {}", len);
+    }
+
+    // Read more data if needed
+    while buf.len() < 4 + len {
+        let mut tmp = [0u8; 4096];
+        match reader.read(&mut tmp).await? {
+            0 => return Ok(None), // EOF
+            n => buf.extend_from_slice(&tmp[..n]),
+        }
+    }
+
+    // Extract payload
+    let payload = Bytes::copy_from_slice(&buf[4..4 + len]);
+    buf.advance(4 + len);
+    Ok(Some(payload))
 }
 
 // Helper to consume the BytesMut buffer
