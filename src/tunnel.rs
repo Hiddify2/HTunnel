@@ -114,6 +114,8 @@ struct Inner {
     sender:  RawSender,
     addr:    PeerAddr,
     cfg:     Arc<Config>,
+    /// Client-side uplink channel used to hand encoded packets to a SOCKS5 UDP relay.
+    uplink:  Option<mpsc::Sender<Bytes>>,
 }
 
 /// Manages all active tunnels.  Cheaply cloneable (`Arc` inside).
@@ -121,13 +123,14 @@ struct Inner {
 pub struct TunnelManager(Arc<Inner>);
 
 impl TunnelManager {
-    pub fn new(sender: RawSender, addr: PeerAddr, cfg: Arc<Config>) -> Self {
+    pub fn new(sender: RawSender, addr: PeerAddr, cfg: Arc<Config>, uplink: Option<mpsc::Sender<Bytes>>) -> Self {
         Self(Arc::new(Inner {
             tunnels:               DashMap::new(),
             established_notifiers: DashMap::new(),
             sender,
             addr,
             cfg,
+            uplink,
         }))
     }
 
@@ -427,7 +430,13 @@ impl TunnelManager {
         let a   = &self.0.addr;
         let enc = pkt.encode();
 
-        // Pure UDP: always use raw socket, never TCP uplink
+        if !a.is_server {
+            if let Some(uplink) = &self.0.uplink {
+                uplink.send(enc).await.map_err(|_| anyhow!("uplink channel closed"))?;
+                return Ok(());
+            }
+        }
+
         let out = match self.0.cfg.protocol {
             TunnelProtocol::Udp => OutPacket::Udp {
                 src_ip:   a.local_spoof,

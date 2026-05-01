@@ -54,7 +54,7 @@ pub struct Config {
     pub socks5_port: u16,
     /// Server outbound mode (direct or socks upstream for tunnel egress)
     pub outbound: Option<OutboundMode>,
-    /// Client uplink: upstream proxy to send tunnel packets through (TCP encapsulation)
+    /// Client uplink: upstream proxy to send tunnel packets through (SOCKS5 UDP relay)
     pub client_uplink: Option<OutboundMode>,
 }
 

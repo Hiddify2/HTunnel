@@ -16,9 +16,10 @@ use bytes::Bytes;
 use clap::Parser;
 use tokio::sync::mpsc;
 
-use HTunnel::config::Config;
+use HTunnel::config::{Config, OutboundMode};
 use HTunnel::raw_socket::{RawReceiver, RawSender};
 use HTunnel::socks5::run_socks5;
+use HTunnel::socks5_udp_relay::spawn_socks5_udp_relay;
 use HTunnel::tun::TunDevice;
 use HTunnel::tun_bridge::{
     run_tun_reader, spawn_tun_writer, spawn_tunnel_to_tun, TunnelPool,
@@ -66,6 +67,13 @@ async fn main() -> Result<()> {
     allowed.push(cfg.peer_spoofed_ip);
     let mut receiver = RawReceiver::spawn(cfg.protocol, cfg.data_port, cfg.icmp_id, allowed)?;
 
+    let uplink_config = match &cfg.client_uplink {
+        Some(OutboundMode::Socks { server, port }) => Some((format!("{}:{}", server, port), cfg.peer_real_ip, cfg.data_port)),
+        _ => None,
+    };
+
+    let (uplink_tx, uplink_rx) = mpsc::channel::<Bytes>(cfg.channel_capacity);
+
     // Build the tunnel manager.
     let peer_addr = PeerAddr {
         local_spoof: cfg.pick_spoofed_ip(),
@@ -74,8 +82,15 @@ async fn main() -> Result<()> {
         icmp_id:     cfg.icmp_id,
         is_server:   false,
     };
-    // Pure UDP: no uplink channel
-    let manager = TunnelManager::new(sender, peer_addr, cfg.clone());
+    let manager = TunnelManager::new(sender, peer_addr, cfg.clone(), uplink_config.as_ref().map(|_| uplink_tx));
+
+    if let Some((upstream, server_addr, server_port)) = uplink_config {
+        tokio::spawn(async move {
+            if let Err(e) = spawn_socks5_udp_relay(&upstream, server_addr, server_port, uplink_rx).await {
+                log::error!("SOCKS5 UDP uplink failed: {}", e);
+            }
+        });
+    }
 
     // ── Spawn local SOCKS5 proxy for application connections ──────────────────
     if cfg.socks_listen.is_some() {
