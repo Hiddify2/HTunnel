@@ -68,11 +68,11 @@ async fn main() -> Result<()> {
     let mut receiver = RawReceiver::spawn(cfg.protocol, cfg.data_port, cfg.icmp_id, allowed)?;
 
     let uplink_config = match &cfg.client_uplink {
-        Some(OutboundMode::Socks { server, port }) => Some((format!("{}:{}", server, port), cfg.peer_real_ip, cfg.data_port)),
+        Some(OutboundMode::Socks { server, port }) => {
+            Some((format!("{}:{}", server, port), cfg.peer_real_ip, cfg.data_port))
+        }
         _ => None,
     };
-
-    let (uplink_tx, uplink_rx) = mpsc::channel::<Bytes>(cfg.channel_capacity);
 
     // Build the tunnel manager.
     let peer_addr = PeerAddr {
@@ -82,9 +82,17 @@ async fn main() -> Result<()> {
         icmp_id:     cfg.icmp_id,
         is_server:   false,
     };
-    let manager = TunnelManager::new(sender, peer_addr, cfg.clone(), uplink_config.as_ref().map(|_| uplink_tx));
+    let (manager, uplink_rx_opt) = if uplink_config.is_some() {
+        let (uplink_tx, uplink_rx) = mpsc::channel::<Bytes>(cfg.channel_capacity);
+        (
+            TunnelManager::new(sender, peer_addr, cfg.clone(), Some(uplink_tx)),
+            Some(uplink_rx),
+        )
+    } else {
+        (TunnelManager::new(sender, peer_addr, cfg.clone(), None), None)
+    };
 
-    if let Some((upstream, server_addr, server_port)) = uplink_config {
+    if let (Some((upstream, server_addr, server_port)), Some(uplink_rx)) = (uplink_config, uplink_rx_opt) {
         tokio::spawn(async move {
             if let Err(e) = spawn_socks5_udp_relay(&upstream, server_addr, server_port, uplink_rx).await {
                 log::error!("SOCKS5 UDP uplink failed: {}", e);

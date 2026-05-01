@@ -19,7 +19,7 @@ use HTunnel::config::Config;
 use HTunnel::raw_socket::RawSender;
 use HTunnel::tun::TunDevice;
 use HTunnel::tun_bridge::{
-    run_tun_reader, spawn_tun_writer, spawn_tunnel_to_tun, TunnelPool,
+    run_tun_reader, spawn_tun_writer, TunnelPool,
 };
 use HTunnel::tunnel::{PeerAddr, TunnelManager};
 use HTunnel::udp_listener::run_udp_listener;
@@ -66,7 +66,7 @@ async fn main() -> Result<()> {
         icmp_id:     cfg.icmp_id,
         is_server:   true,
     };
-    let manager = TunnelManager::new(sender, peer_addr, cfg.clone());
+    let manager = TunnelManager::new(sender, peer_addr, cfg.clone(), None);
 
     let tun_mtu = if cfg.tun_mtu == 0 { cfg.mtu } else { cfg.tun_mtu.min(cfg.mtu) };
     if cfg.tun_mtu > cfg.mtu {

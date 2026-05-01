@@ -2,7 +2,6 @@
 //!
 //! Simple UDP socket that listens for incoming tunnel packets on the configured port.
 
-use std::net::SocketAddr;
 use std::sync::Arc;
 use anyhow::{Context, Result};
 use bytes::Bytes;
