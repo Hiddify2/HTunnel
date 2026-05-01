@@ -325,7 +325,18 @@ fn fill_ipv4_header(
     pkt.set_header_length(5); // 5 × 4 = 20 bytes
     pkt.set_dscp(0);
     pkt.set_ecn(0);
+    
+    // On Linux, when using IP_HDRINCL, the total_length and fragment_offset
+    // MUST be in host byte order.
+    #[cfg(target_os = "linux")]
+    {
+        let total_len = ip_total as u16;
+        let buf = pkt.packet_mut();
+        buf[2..4].copy_from_slice(&total_len.to_ne_bytes());
+    }
+    #[cfg(not(target_os = "linux"))]
     pkt.set_total_length(ip_total as u16);
+
     pkt.set_identification(rand::random());
     pkt.set_flags(Ipv4Flags::DontFragment);
     pkt.set_fragment_offset(0);
@@ -334,6 +345,8 @@ fn fill_ipv4_header(
     pkt.set_source(src_ip);
     pkt.set_destination(dst_ip);
     pkt.set_checksum(0); // zero before computing
+    
+    // Checksum is always network byte order, but pnet handles it.
     let cksum = pnet_packet::ipv4::checksum(&pkt.to_immutable());
     pkt.set_checksum(cksum);
 }

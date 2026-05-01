@@ -190,7 +190,7 @@ async fn handle_new_tunnel(
     // TCP → tunnel
     let net_tx2 = net_tx;
     let tcp_to_t = tokio::spawn(async move {
-        let mut buf = vec![0u8; 1500]; // Standard MTU
+        let mut buf = vec![0u8; DEFAULT_MTU];
         loop {
             match tcp_r.read(&mut buf).await {
                 Ok(0) | Err(_) => break,
