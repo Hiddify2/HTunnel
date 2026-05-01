@@ -192,6 +192,10 @@ impl TunnelManager {
         }
     }
 
+    pub async fn wait_established(&self, id: u32, timeout: Duration) -> bool {
+        tokio::time::timeout(timeout, self.is_established(id)).await.unwrap_or(false)
+    }
+
     pub async fn is_established(&self, id: u32) -> bool {
         if let Some(t) = self.0.tunnels.get(&id) {
             let t = t.lock().await;
