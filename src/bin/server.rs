@@ -13,10 +13,10 @@ use clap::Parser;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpStream, UdpSocket};
 
-use htunnel::config::{Config, InboundConfig, OutboundConfig, ServerDownlinkConfig, DEFAULT_MTU, DEFAULT_CWND};
-use htunnel::raw_socket::RawSender;
-use htunnel::tunnel::{OutboundTransport, TunnelManager};
-use htunnel::packet::CandyPacket;
+use HTunnel::config::{Config, InboundConfig, OutboundConfig, ServerDownlinkConfig, DEFAULT_MTU, DEFAULT_CWND};
+use HTunnel::raw_socket::RawSender;
+use HTunnel::tunnel::{OutboundTransport, TunnelManager};
+use HTunnel::packet::CandyPacket;
 
 #[derive(Parser, Debug)]
 #[command(name = "server", about = "HTunnel server")]
@@ -41,7 +41,7 @@ async fn main() -> Result<()> {
     let htunnel_inbound = cfg.get_htunnel_inbound()
         .context("No HTunnel inbound found in config")?;
 
-    let (listen_addr_str, encryption, downlink_cfg) = match htunnel_inbound {
+    let (listen_addr_str, _encryption, downlink_cfg) = match htunnel_inbound {
         InboundConfig::HTunnel { listen, encryption, client_downlink } => {
             (listen, encryption, client_downlink)
         }
@@ -76,9 +76,9 @@ async fn main() -> Result<()> {
 
     // Pick a spoofed source IP
     let local_spoof = if fake_ip_pool.is_empty() {
-        Ipv4Addr::new(1, 1, 1, 1) // Default if pool is empty?
+        Ipv4Addr::new(1, 1, 1, 1)
     } else {
-        fake_ip_pool[0] // Just pick the first one for now
+        fake_ip_pool[0]
     };
 
     // 2. Initialize TunnelManager
@@ -118,7 +118,7 @@ async fn main() -> Result<()> {
         };
 
         let payload = &buf[..n];
-        let pkt = match CandyPacket::decode(bytes::Bytes::copy_from_slice(payload)) {
+        let pkt = match CandyPacket::decode(Bytes::copy_from_slice(payload)) {
             Ok(p) => p,
             Err(e) => {
                 log::trace!("Failed to decode CandyPacket from {}: {}", src_addr, e);
@@ -151,7 +151,7 @@ async fn handle_new_tunnel(
     syn:     CandyPacket,
     src_ip:  Ipv4Addr,
     manager: TunnelManager,
-    cfg:     Arc<Config>,
+    _cfg:     Arc<Config>,
 ) -> Result<()> {
     let (tunnel_id, mut app_rx, net_tx) = manager
         .accept_syn(syn, src_ip)
@@ -163,7 +163,8 @@ async fn handle_new_tunnel(
         .context("timeout waiting for CONNECT meta")?
         .context("tunnel closed before CONNECT meta")?;
 
-    let meta = String::from_utf8_lossy(&first_msg);
+    let first_msg_bytes = first_msg.context("empty CONNECT meta")?;
+    let meta = String::from_utf8_lossy(&first_msg_bytes);
     let (target_host, target_port) = parse_connect_meta(&meta)?;
 
     log::info!("tunnel {} forwarding to {}:{}", tunnel_id, target_host, target_port);
@@ -176,13 +177,8 @@ async fn handle_new_tunnel(
 
     // Tunnel → TCP
     let t_to_tcp = tokio::spawn(async move {
-        loop {
-            match app_rx.recv().await {
-                Some(data) => {
-                    if tcp_w.write_all(&data).await.is_err() { break; }
-                }
-                None => break,
-            }
+        while let Some(data) = app_rx.recv().await {
+            if tcp_w.write_all(&data).await.is_err() { break; }
         }
     });
 

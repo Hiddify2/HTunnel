@@ -131,13 +131,8 @@ async fn handle_client(
 
     // Tunnel → TCP
     let t_to_a = tokio::spawn(async move {
-        loop {
-            match app_rx.recv().await {
-                Some(data) => {
-                    if tcp_w.write_all(&data).await.is_err() { break; }
-                }
-                None => break,
-            }
+        while let Some(data) = app_rx.recv().await {
+            if tcp_w.write_all(&data).await.is_err() { break; }
         }
     });
 
