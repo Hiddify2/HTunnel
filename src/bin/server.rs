@@ -81,7 +81,7 @@ async fn main() -> Result<()> {
         local_spoofs,
         data_port: target_addr.port(),
     };
-    let manager = TunnelManager::new(outbound, DEFAULT_MTU, DEFAULT_CWND);
+    let manager = TunnelManager::new(outbound);
 
     // 3. Setup Standard UDP Socket for Uplink
     let udp_uplink = UdpSocket::bind(listen_addr).await

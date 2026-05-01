@@ -101,7 +101,7 @@ async fn main() -> Result<()> {
         relay: uplink,
         server_addr,
     };
-    let manager = TunnelManager::new(outbound, DEFAULT_MTU, DEFAULT_CWND);
+    let manager = TunnelManager::new(outbound);
 
     // ── Background task: process incoming packets (Downlink) ──────────────────
     let mgr2 = manager.clone();
