@@ -46,12 +46,32 @@ pub async fn spawn_socks5_udp_relay(
         .await
         .context("bind UDP socket for SOCKS relay")?;
 
-    while let Some(packet) = uplink_rx.recv().await {
-        let framed = build_socks5_udp_frame(server_addr, server_port, &packet);
-        socket
-            .send_to(&framed, relay_addr)
-            .await
-            .context("send UDP datagram through SOCKS relay")?;
+    let mut recv_buf = vec![0u8; 65535];
+    loop {
+        tokio::select! {
+            maybe_packet = uplink_rx.recv() => {
+                match maybe_packet {
+                    Some(packet) => {
+                        let framed = build_socks5_udp_frame(server_addr, server_port, &packet);
+                        socket
+                            .send_to(&framed, relay_addr)
+                            .await
+                            .context("send UDP datagram through SOCKS relay")?;
+                    }
+                    None => return Ok(()),
+                }
+            }
+            recv_result = socket.recv_from(&mut recv_buf) => {
+                match recv_result {
+                    Ok((n, from)) => {
+                        log::trace!("SOCKS5 UDP relay received {} bytes from {}", n, from);
+                    }
+                    Err(e) => {
+                        log::warn!("SOCKS5 UDP relay receive error: {}", e);
+                    }
+                }
+            }
+        }
     }
 
     Ok(())

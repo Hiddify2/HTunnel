@@ -18,9 +18,7 @@ use tokio::sync::mpsc;
 use HTunnel::config::Config;
 use HTunnel::raw_socket::RawSender;
 use HTunnel::tun::TunDevice;
-use HTunnel::tun_bridge::{
-    run_tun_reader, spawn_tun_writer, TunnelPool,
-};
+use HTunnel::tun_bridge::{run_tun_reader, spawn_tun_writer, TunnelPool};
 use HTunnel::tunnel::{PeerAddr, TunnelManager};
 use HTunnel::udp_listener::run_udp_listener;
 
