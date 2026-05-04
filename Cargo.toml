@@ -1,9 +1,9 @@
 [package]
-name = "HTunnel"
+name = "htunnel"
 version = "0.1.0"
 edition = "2021"
-authors = ["AmiRCandy","Hiddify2"]
-description = "Bidirectional IP spoofing tunnel for heavily censored networks"
+authors = ["AmiRCandy"]
+description = "HTunnel UDP tunnel for heavily censored networks"
 license = "MIT"
 
 [[bin]]
@@ -20,6 +20,7 @@ tokio = { version = "1", features = ["full"] }
 
 # Serialization
 serde = { version = "1", features = ["derive"] }
+toml = "0.8"
 
 # Error handling
 anyhow = "1"
@@ -32,6 +33,7 @@ env_logger = "0.11"
 # Packet building/parsing
 pnet = "0.35"
 pnet_packet = "0.35"
+pnet_transport = "0.35"
 
 # Low-level OS interfaces
 libc = "0.2"
@@ -47,7 +49,6 @@ dashmap = "6"
 
 # CLI argument parsing
 clap = { version = "4", features = ["derive"] }
-serde_json = "1.0.149"
 
 [profile.release]
 opt-level = 3
