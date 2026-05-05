@@ -15,23 +15,12 @@ spoofed_ip     = "1.2.3.4"
 # Spoofed IP pool – server can rotate among multiple addresses.
 spoofed_ip_pool = ["1.2.3.4", "5.6.7.8"]
 
-# The spoofed source IP the client uses (what we expect to receive as
-# source in incoming packets).
-peer_spoofed_ip = "8.8.4.4"
-
 # ─────────────────────────────────────────────────────────────────────────────
 # Channel Settings
 # ─────────────────────────────────────────────────────────────────────────────
 
 # UDP port for the data channel.  Must match client.
 data_port = 51820
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Security
-# ─────────────────────────────────────────────────────────────────────────────
-
-# Pre-shared key – must match client exactly.
-pre_shared_key = "change-this-to-a-random-secret-key-at-least-32-chars"
 
 # Additional trusted client IPs. If the client uplink goes through a SOCKS5
 # proxy, add the proxy's public IP here.

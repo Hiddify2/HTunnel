@@ -81,6 +81,10 @@ impl UdpProxySender {
             .context("send UDP via uplink_proxy")?;
         Ok(())
     }
+
+    pub fn relay_addr(&self) -> SocketAddr {
+        self.relay_addr
+    }
 }
 
 async fn resolve_proxy(proxy: &str) -> Result<SocketAddr> {

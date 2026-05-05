@@ -6,6 +6,7 @@
 //! Usage:
 //!   cargo run --bin client -- --config config/client.toml
 
+use std::net::Ipv4Addr;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -44,10 +45,10 @@ async fn main() -> Result<()> {
     let cfg = Arc::new(Config::from_file(&args.config)?);
 
     log::info!(
-        "HTunnel client starting | real={} spoof={} peer={}",
+        "HTunnel client starting | real={} server={}:{}",
         cfg.real_ip,
-        cfg.spoofed_ip,
-        cfg.peer_real_ip
+        cfg.peer_real_ip,
+        cfg.data_port
     );
 
     let uplink_proxy = cfg
@@ -55,19 +56,23 @@ async fn main() -> Result<()> {
         .as_deref()
         .ok_or_else(|| anyhow!("client config missing uplink_proxy"))?;
 
+    log::info!("uplink proxy connecting: {}", uplink_proxy);
     // Build the SOCKS5 UDP-associate sender for client uplink.
     let sender = UdpProxySender::connect(uplink_proxy).await?;
+    log::info!("uplink proxy connected | relay={}", sender.relay_addr());
     let sender = OutboundSender::Proxy(sender);
 
     // Build the raw socket receiver (listens for spoofed UDP downlink).
     let mut allowed = cfg.allowed_peers.clone();
     allowed.push(cfg.peer_real_ip);
-    allowed.push(cfg.peer_spoofed_ip);
+    if let Some(ip) = cfg.peer_spoofed_ip {
+        allowed.push(ip);
+    }
     let mut receiver = RawReceiver::spawn(cfg.data_port, allowed)?;
 
     // Build the tunnel manager.
     let peer_addr = PeerAddr {
-        local_spoof: cfg.pick_spoofed_ip(),
+        local_spoof: Ipv4Addr::UNSPECIFIED,
         peer_real:   cfg.peer_real_ip,
         data_port:   cfg.data_port,
         is_server:   false,

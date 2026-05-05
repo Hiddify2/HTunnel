@@ -15,14 +15,17 @@ pub struct Config {
     /// The real IPv4 address of the remote peer.
     pub peer_real_ip: Ipv4Addr,
 
-    /// The spoofed source IP this node puts in outgoing packets.
-    pub spoofed_ip: Ipv4Addr,
+    /// The spoofed source IP this node puts in outgoing packets (server only).
+    #[serde(default)]
+    pub spoofed_ip: Option<Ipv4Addr>,
 
     /// The spoofed source IP the peer uses (expected in incoming packets).
-    pub peer_spoofed_ip: Ipv4Addr,
+    /// Client uses this to accept downlink packets; server may omit it.
+    #[serde(default)]
+    pub peer_spoofed_ip: Option<Ipv4Addr>,
 
-    /// Optional pool of spoofed IPs for rotation.  If empty, `spoofed_ip` is
-    /// always used.
+    /// Optional pool of spoofed IPs for rotation (server only). If empty,
+    /// `spoofed_ip` is used.
     #[serde(default)]
     pub spoofed_ip_pool: Vec<Ipv4Addr>,
 
@@ -37,10 +40,6 @@ pub struct Config {
     /// Number of independent parallel tunnels to maintain.
     #[serde(default = "default_tunnel_count")]
     pub tunnel_count: usize,
-
-    /// Pre-shared key (hex string) used to authenticate packets.  Both sides
-    /// must share the same key.
-    pub pre_shared_key: String,
 
     /// Network interface name to bind raw sockets to (e.g. "eth0", "ens3").
     pub interface: String,
@@ -80,20 +79,28 @@ impl Config {
     /// Returns true if `ip` is a trusted peer address.
     pub fn is_peer_allowed(&self, ip: &Ipv4Addr) -> bool {
         *ip == self.peer_real_ip
-            || *ip == self.peer_spoofed_ip
+            || self.peer_spoofed_ip.is_some_and(|p| *ip == p)
             || self.allowed_peers.contains(ip)
     }
 
     /// Pick a (possibly random) spoofed source IP from the configured pool.
     /// Falls back to `spoofed_ip` when the pool is empty.
-    pub fn pick_spoofed_ip(&self) -> Ipv4Addr {
+    pub fn pick_spoofed_ip(&self) -> anyhow::Result<Ipv4Addr> {
         if self.spoofed_ip_pool.is_empty() {
-            return self.spoofed_ip;
+            return self
+                .spoofed_ip
+                .ok_or_else(|| anyhow::anyhow!("spoofed_ip is required for server"));
         }
         use rand::seq::SliceRandom;
-        *self
+        if let Some(ip) = self
             .spoofed_ip_pool
             .choose(&mut rand::thread_rng())
-            .unwrap_or(&self.spoofed_ip)
+            .copied()
+        {
+            return Ok(ip);
+        }
+        self
+            .spoofed_ip
+            .ok_or_else(|| anyhow::anyhow!("spoofed_ip is required for server"))
     }
 }
