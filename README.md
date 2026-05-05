@@ -90,58 +90,6 @@ Notes:
 ## License
 
 MIT License. See [LICENSE](./LICENSE).
-{
-  "inbounds": [
-    {
-      "type": "HTunnel",
-      "listen": "0.0.0.0:1081",
-      "client_downlink": {
-        "type": "fake",
-        "transport": "udp",
-        "target": "CLIENT_IP:1081",
-        "fake_ip_pool": ["1.1.1.1", "8.8.8.8", "208.67.222.222"]
-      }
-    }
-  ],
-  "outbounds": [
-    {
-      "type": "socks",
-      "server": "127.0.0.1",
-      "port": 40000
-    }
-  ]
-}
-```
-
-**Client:**
-```json
-{
-  "inbounds": [
-    {
-      "type": "socks",
-      "listen": "127.0.0.1:1080"
-    }
-  ],
-  "outbounds": [
-    {
-      "type": "HTunnel",
-      "server": "SERVER_IP:1081",
-      "client_uplink": {
-        "type": "socks",
-        "server": "127.0.0.1",
-        "port": 40001
-      },
-      "client_downlink": {
-        "type": "fake",
-        "transport": "udp",
-        "excepted_fake_ip_pool": ["1.1.1.1", "8.8.8.8", "208.67.222.222"]
-      }
-    }
-  ]
-}
-```
-
-(Run WARP SOCKS proxies on ports 40000 and 40001 respectively.)
 
 ---
 
