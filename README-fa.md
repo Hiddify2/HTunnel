@@ -44,7 +44,49 @@
 ```
 
 ---
+## 🚀 اسکریپت راه‌اندازی سریع
 
+HTunnel یک اسکریپت تعاملی نصب دارد که همه چیز را به صورت خودکار پیکربندی می‌کند!
+
+### استفاده از setup.sh
+
+```bash
+# دانلود اسکریپت راه‌اندازی
+curl -O https://raw.githubusercontent.com/AmiRCandy/HTunnel/main/setup.sh
+
+# اجرایی کردن اسکریپت
+chmod +x setup.sh
+
+# اجرای اسکریپت (نیاز به sudo)
+sudo ./setup.sh
+```
+
+**⚠️ نکته مهم برای سرورهای ایران:**
+به دلیل فیلترینگ اینترنت، دانلود از گیت‌هاب در سرورهای ایران ممکن است با مشکل مواجه شود. در این صورت:
+- از فیلترشکن یا VPN استفاده کنید
+- یا اسکریپت را دستی اجرا کنید (بخش دانلود را رد کنید)
+- یا باینری‌ها را از طریق دیگری دانلود و در مسیر پروژه قرار دهید
+
+اسکریپت موارد زیر را انجام می‌دهد:
+- ✅ تشخیص خودکار رابط شبکه (با استفاده از `ip route`)
+- ✅ پرسش کلاینت یا سرور بودن
+- ✅ دریافت تعاملی همه تنظیمات پیکربندی
+- ✅ تشخیص خودکار IP عمومی
+- ✅ دانلود جدیدترین باینری‌ها از انتشارهای گیت‌هاب (یا ساخت از سورس)
+- ✅ ایجاد فایل‌های JSON پیکربندی با فرمت صحیح
+- ✅ نصب اختیاری به عنوان سرویس systemd (اجرای خودکار در بوت)
+- ✅ اجرای اختیاری HTunnel
+
+**کارهایی که اسکریپت به صورت خودکار انجام می‌دهد:**
+۱. تشخیص رابط پیش‌فرض با استفاده از `ip r | grep default`
+۲. پرسش حالت کلاینت یا سرور
+۳. درخواست آدرس‌های IP و تنظیمات
+۴. دانلود `HTunnel-client-linux-x86_64` یا `HTunnel-server-linux-x86_64` از انتشارهای گیت‌هاب
+۵. ایجاد `config/client.json` یا `config/server.json` با تنظیمات شما
+۶. تنظیم قابلیت `CAP_NET_RAW` یا اجرا با sudo
+۷. اجرای اختیاری HTunnel
+
+---
 ## �️ راهنمای نصب
 
 ### مرحله ۱: پیش‌نیازهای سیستم
@@ -66,20 +108,20 @@
 ۲. آخرین نسخه را برای معماری خود دانلود کنید:
 
 ```bash
-# برای سیستم‌های x86_64
-wget https://github.com/AmiRCandy/HTunnel/releases/latest/download/htunnel-x86_64-unknown-linux-gnu.tar.gz
-tar -xzf htunnel-x86_64-unknown-linux-gnu.tar.gz
+# برای سیستم‌های x86_64 - دانلود کلاینت
+wget https://github.com/AmiRCandy/HTunnel/releases/latest/download/HTunnel-client-linux-x86_64
+chmod +x HTunnel-client-linux-x86_64
 
-# برای سیستم‌های ARM64 (در صورت وجود)
-wget https://github.com/AmiRCandy/HTunnel/releases/latest/download/htunnel-aarch64-unknown-linux-gnu.tar.gz
-tar -xzf htunnel-aarch64-unknown-linux-gnu.tar.gz
+# دانلود سرور
+wget https://github.com/AmiRCandy/HTunnel/releases/latest/download/HTunnel-server-linux-x86_64
+chmod +x HTunnel-server-linux-x86_64
 
-# اجرایی کردن فایل‌ها
-chmod +x client server
-
-# اختیاری: انتقال به مسیر سیستم
-sudo mv client server /usr/local/bin/
+# اختیاری: تغییر نام و انتقال به مسیر سیستم
+sudo mv HTunnel-client-linux-x86_64 /usr/local/bin/client
+sudo mv HTunnel-server-linux-x86_64 /usr/local/bin/server
 ```
+
+**نکته:** باینری‌ها فایل‌های اجرایی مستقل هستند (نه آرشیو tar.gz). فقط دانلود کنید، اجرایی کنید و اجرا!
 
 #### روش ۲: ساخت از سورس 🔧
 

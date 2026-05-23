@@ -44,7 +44,43 @@ This design makes uploads look like regular SOCKS5 traffic while downloads use s
 ```
 
 ---
+## 🚀 Quick Setup Script
 
+HTunnel provides an interactive setup script that automaticaly configures everything for you!
+
+### Using setup.sh
+
+```bash
+# Download the setup script
+curl -O https://raw.githubusercontent.com/Hiddify2/HTunnel/main/setup.sh
+
+# Make it executable
+chmod +x setup.sh
+
+# Run the setup (requires sudo)
+sudo ./setup.sh
+```
+
+The script will:
+- ✅ Auto-detect your network interface (using `ip route`)
+- ✅ Ask if you want to configure Client or Server
+- ✅ Interactive ask for all configuration options
+- ✅ Auto-detect your public IP
+- ✅ Download latest binaries from GitHub releases (or build from source)
+- ✅ Create properly formatted JSON config files
+- ✅ Optionally install as systemd service (auto-start on boot)
+- ✅ Optionally run HTunnel immediately
+
+**What the script does automatically:**
+1. Detects default interface using `ip r | grep default`
+2. Asks for Client or Server mode
+3. Prompts for IP addresses and configuration
+4. Downloads `HTunnel-client-linux-x86_64` or `HTunnel-server-linux-x86_64` from GitHub releases
+5. Creates `config/client.json` or `config/server.json` with your settings
+6. Sets `CAP_NET_RAW` capability or runs with sudo
+7. Optionally starts HTunnel for you
+
+---
 ## �️ Installation Guide
 
 ### Step 1: System Requirements
@@ -66,20 +102,20 @@ This design makes uploads look like regular SOCKS5 traffic while downloads use s
 2. Download the latest release for your architecture:
 
 ```bash
-# For x86_64 systems
-wget https://github.com/Hiddify2/HTunnel/releases/latest/download/htunnel-x86_64-unknown-linux-gnu.tar.gz
-tar -xzf htunnel-x86_64-unknown-linux-gnu.tar.gz
+# For x86_64 systems - Download client
+wget https://github.com/Hiddify2/HTunnel/releases/latest/download/HTunnel-client-linux-x86_64
+chmod +x HTunnel-client-linux-x86_64
 
-# For ARM64 systems (if available)
-wget https://github.com/Hiddify2/HTunnel/releases/latest/download/htunnel-aarch64-unknown-linux-gnu.tar.gz
-tar -xzf htunnel-aarch64-unknown-linux-gnu.tar.gz
+# Download server
+wget https://github.com/Hiddify2/HTunnel/releases/latest/download/HTunnel-server-linux-x86_64
+chmod +x HTunnel-server-linux-x86_64
 
-# Make binaries executable
-chmod +x client server
-
-# Optional: Move to system path
-sudo mv client server /usr/local/bin/
+# Optional: Rename and move to system path
+sudo mv HTunnel-client-linux-x86_64 /usr/local/bin/client
+sudo mv HTunnel-server-linux-x86_64 /usr/local/bin/server
 ```
+
+**Note:** The binaries are standalone executables (not tar.gz archives). Just download, make executable, and run!
 
 #### Method 2: Build from Source 🔧
 
@@ -193,7 +229,7 @@ Edit `config/client.json`:
   "listen": "127.0.0.1:9234",
 
   // Network interface (use "auto" for auto-detection)
-  "interface": "auto",
+  "interface": "eth0",
 
   // Client's real public IP
   "real_ip": "198.51.100.1",
@@ -246,7 +282,7 @@ If you need an upstream SOCKS5 proxy for the client uplink:
 ```json
 {
   "listen": "127.0.0.1:9234",
-  "interface": "auto",
+  "interface": "eth0",
   "real_ip": "198.51.100.1",
   "peer_real_ip": "203.0.113.1",
   "peer_fake_ip": "1.2.3.4",
