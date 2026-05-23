@@ -2,7 +2,7 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Rust](https://img.shields.io/badge/rust-1.75+-orange.svg)](https://www.rust-lang.org/)
-[![GitHub release (latest by date)](https://img.shields.io/github/v/release/AmiRCandy/HTunnel)](https://github.com/AmiRCandy/HTunnel/releases)
+[![GitHub release (latest by date)](https://img.shields.io/github/v/release/Hiddify2/HTunnel)](https://github.com/Hiddify2/HTunnel/releases)
 
 > ⚠️ **WARNING: Educational Purpose Only**
 >
@@ -55,11 +55,11 @@ This design makes uploads look like regular SOCKS5 traffic while downloads use s
 
 ### Option 1: Download Pre-built Binaries 📦
 
-Download the latest binaries from the [GitHub Releases](https://github.com/AmiRCandy/HTunnel/releases) page:
+Download the latest binaries from the [GitHub Releases](https://github.com/Hiddify2/HTunnel/releases) page:
 
 ```bash
 # Download and extract
-wget https://github.com/AmiRCandy/HTunnel/releases/latest/download/htunnel-x86_64-unknown-linux-gnu.tar.gz
+wget https://github.com/Hiddify2/HTunnel/releases/latest/download/htunnel-x86_64-unknown-linux-gnu.tar.gz
 tar -xzf htunnel-x86_64-unknown-linux-gnu.tar.gz
 
 # Make binaries executable
@@ -70,7 +70,7 @@ chmod +x client server
 
 ```bash
 # Clone the repository
-git clone https://github.com/AmiRCandy/HTunnel.git
+git clone https://github.com/Hiddify2/HTunnel.git
 cd HTunnel
 
 # Build in release mode
