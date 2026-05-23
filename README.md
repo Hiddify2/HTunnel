@@ -46,18 +46,18 @@ cargo build --release
 Server:
 
 ```bash
-sudo ./target/release/server --config config/server.toml
+sudo ./target/release/server --config config/server.json
 ```
 
 Client:
 
 ```bash
-sudo ./target/release/client --config config/client.toml
+sudo ./target/release/client --config config/client.json
 ```
 
-## Configuration (TOML)
+## Configuration (JSON)
 
-HTunnel uses TOML config files in `config/`.
+HTunnel uses JSON config files in `config/`.
 
 ### Client
 

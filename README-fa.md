@@ -36,18 +36,18 @@ cargo build --release
 سرور:
 
 ```bash
-sudo ./target/release/server --config config/server.toml
+sudo ./target/release/server --config config/server.json
 ```
 
 کلاینت:
 
 ```bash
-sudo ./target/release/client --config config/client.toml
+sudo ./target/release/client --config config/client.json
 ```
 
-## پیکربندی (TOML)
+## پیکربندی (JSON)
 
-HTunnel از فایل‌های TOML در پوشه `config/` استفاده می‌کند.
+HTunnel از فایل‌های JSON در پوشه `config/` استفاده می‌کند.
 
 ### کلاینت
 

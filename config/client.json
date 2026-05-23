@@ -1,0 +1,13 @@
+{
+  "listen": "127.0.0.1:9234",
+  "interface": "eth0",
+  "real_ip": "1.1.1.1",
+  "peer_real_ip": "203.0.113.1",
+  "peer_fake_ip": "1.2.3.4",
+  "data_port": 51820,
+  "allowed_peers": [],
+  "tunnel_count": 4,
+  "mtu": 1380,
+  "initial_cwnd": 10.0,
+  "uplink_proxy": "127.0.0.1:1081"
+}

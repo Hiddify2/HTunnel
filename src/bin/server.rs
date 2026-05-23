@@ -4,7 +4,7 @@
 //! SOCKS5 CONNECT session to the requested TCP destination.
 //!
 //! Usage:
-//!   cargo run --bin server -- --config config/server.toml
+//!   cargo run --bin server -- --config config/server.json
 
 use std::sync::Arc;
 use std::time::Duration;
@@ -22,8 +22,8 @@ use htunnel::tunnel::{OutboundSender, PeerAddr, TunnelManager};
 #[derive(Parser, Debug)]
 #[command(name = "server", about = "HTunnel server (tunnel endpoint)")]
 struct Args {
-    /// Path to the TOML configuration file.
-    #[arg(short, long, default_value = "config/server.toml")]
+    /// Path to the JSON configuration file.
+    #[arg(short, long, default_value = "config/server.json")]
     config: String,
 
     /// Override log level.
@@ -53,7 +53,7 @@ async fn main() -> Result<()> {
 
     let mut allowed = cfg.allowed_peers.clone();
     allowed.push(cfg.peer_real_ip);
-    if let Some(ip) = cfg.peer_faked_ip {
+    if let Some(ip) = cfg.peer_fake_ip {
         allowed.push(ip);
     }
     let mut receiver = RawReceiver::spawn(cfg.data_port, allowed)?;

@@ -4,7 +4,7 @@
 //! via a UDP tunnel.
 //!
 //! Usage:
-//!   cargo run --bin client -- --config config/client.toml
+//!   cargo run --bin client -- --config config/client.json
 
 use std::net::Ipv4Addr;
 use std::sync::Arc;
@@ -22,8 +22,8 @@ use htunnel::udp_proxy::UdpProxySender;
 #[derive(Parser, Debug)]
 #[command(name = "client", about = "HTunnel client (SOCKS5 proxy)")]
 struct Args {
-    /// Path to the TOML configuration file.
-    #[arg(short, long, default_value = "config/client.toml")]
+    /// Path to the JSON configuration file.
+    #[arg(short, long, default_value = "config/client.json")]
     config: String,
 
     /// Override log level (e.g. debug, info, warn).
@@ -65,7 +65,7 @@ async fn main() -> Result<()> {
     // Build the raw socket receiver (listens for faked UDP downlink).
     let mut allowed = cfg.allowed_peers.clone();
     allowed.push(cfg.peer_real_ip);
-    if let Some(ip) = cfg.peer_faked_ip {
+    if let Some(ip) = cfg.peer_fake_ip {
         allowed.push(ip);
     }
     let mut receiver = RawReceiver::spawn(cfg.data_port, allowed)?;
