@@ -238,5 +238,5 @@ Ensure you have explicit permission before:
 ---
 
 <p align="center">
-  Made with ❤️ for educational purposes
+  Made with ❤️ By Hiddify Team
 </p>
