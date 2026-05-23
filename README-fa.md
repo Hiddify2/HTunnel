@@ -57,7 +57,7 @@ HTunnel از فایل‌های JSON در پوشه `config/` استفاده می�
 - `data_port`: پورت UDP (باید یکی باشد)
 - `allowed_peers`: IPهای اضافی برای پذیرش
 - `interface`: نام رابط شبکه
-- `socks5_port`: پورت SOCKS5 محلی
+- `listen`: آدرس SOCKS5 محلی (host:port)
 - `uplink_proxy`: پروکسی SOCKS5 بالادستی (host:port)
 - `tunnel_count`, `mtu`, `initial_cwnd`: تنظیمات عملکرد
 

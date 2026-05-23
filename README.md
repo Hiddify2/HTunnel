@@ -67,7 +67,7 @@ HTunnel uses JSON config files in `config/`.
 - `data_port`: UDP port (must match server)
 - `allowed_peers`: extra source IPs to accept
 - `interface`: network interface name
-- `socks5_port`: local SOCKS5 listen port
+- `listen`: local SOCKS5 listen address (host:port)
 - `uplink_proxy`: upstream SOCKS5 proxy (host:port)
 - `tunnel_count`, `mtu`, `initial_cwnd`: performance tuning
 

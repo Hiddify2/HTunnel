@@ -1,6 +1,6 @@
 //! SOCKS5 proxy server (client side only).
 //!
-//! Accepts local TCP connections on `cfg.socks5_port`, performs the SOCKS5
+//! Accepts local TCP connections on `cfg.listen`, performs the SOCKS5
 //! handshake, and relays data bidirectionally through a HTunnel tunnel.
 
 use std::net::SocketAddr;
@@ -32,10 +32,11 @@ const REP_ATYP_UNSUPPORTED:u8 = 0x08;
 
 /// Bind and run the SOCKS5 proxy.  Never returns unless an error occurs.
 pub async fn run_socks5(cfg: Arc<Config>, manager: TunnelManager) -> Result<()> {
-    let bind = SocketAddr::from(([127, 0, 0, 1], cfg.socks5_port));
+    let bind: SocketAddr = cfg.listen.parse()
+        .with_context(|| format!("invalid listen address '{}'", cfg.listen))?;
     let listener = TcpListener::bind(bind)
         .await
-        .with_context(|| format!("bind SOCKS5 port {}", cfg.socks5_port))?;
+        .with_context(|| format!("bind SOCKS5 on {}", cfg.listen))?;
 
     log::info!("SOCKS5 proxy listening on {}", bind);
 
