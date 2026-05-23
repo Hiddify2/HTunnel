@@ -1,109 +1,242 @@
-# HTunnel
+# 🚇 HTunnel
 
-> [!WARNING]
-> **Educational Purpose Only**
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![Rust](https://img.shields.io/badge/rust-1.75+-orange.svg)](https://www.rust-lang.org/)
+[![GitHub release (latest by date)](https://img.shields.io/github/v/release/AmiRCandy/HTunnel)](https://github.com/AmiRCandy/HTunnel/releases)
+
+> ⚠️ **WARNING: Educational Purpose Only**
 >
-> This project is created strictly for educational and research purposes.
-> It is intended to demonstrate concepts, techniques, and implementation details in a controlled and ethical manner.
->
-> The author is **not responsible** for any misuse, abuse, or damage caused by this project.
-> Any actions performed using this code are the sole responsibility of the user.
->
-> By using this project, you agree to use it **legally and ethically**.
+> This project is created strictly for educational and research purposes to demonstrate networking concepts.
+> The author is **not responsible** for any misuse or damage caused by this project.
+> By using this code, you agree to use it **legally and ethically** and respect local laws and network policies.
 
-**HTunnel** is a UDP tunnel with asymmetric transport:
+---
 
-- **Uplink (client → server)**: normal UDP sent through an upstream SOCKS5 proxy.
-- **Downlink (server → client)**: faked UDP packets from a configurable IP pool.
+## 📖 What is HTunnel?
 
-This keeps uploads looking like regular SOCKS5 traffic while downloads are sparse faked packets.
+**HTunnel** is a high-performance UDP tunnel designed for challenging network environments. It uses an **asymmetric transport** approach:
 
-## Architecture
+| Direction | Method | Description |
+|-----------|--------|-------------|
+| **Uplink** (Client → Server) | SOCKS5 Proxy | Normal UDP traffic through an upstream SOCKS5 proxy |
+| **Downlink** (Server → Client) | Fake UDP | Packets with configurable fake source IPs |
+
+This design makes uploads look like regular SOCKS5 traffic while downloads use sparse faked packets from a configurable IP pool.
+
+### 🏗️ Architecture
 
 ```
-[App] -> [Local SOCKS5] -> [Uplink SOCKS5 Proxy] -> [Server]
-                                      ^
-                                      |
-                            faked UDP downlink
+┌─────┐     ┌──────────────┐     ┌──────────────┐     ┌────────┐
+│ App │────▶│ Local SOCKS5 │────▶│  Upstream   │────▶│ Server │
+└─────┘     └──────────────┘     │  SOCKS5     │     └────────┘
+                                  │  Proxy      │         ▲
+                                  └──────────────┘         │
+                                        ▲                  │
+                                        │                  │
+                                   faked UDP downlink       │
+                                   (from IP pool)          │
+                                        │                  │
+                                  ┌─────┴──────────────────┘
+                                  │
+                            ┌─────▼─────┐
+                            │   Client  │
+                            └───────────┘
 ```
 
-## Quick Start
+---
+
+## 🚀 Quick Start
 
 ### Prerequisites
 
-- **Linux** (requires CAP_NET_RAW)
-- Rust toolchain: `rustup update`
-- Upstream SOCKS5 proxy for uplink UDP
+- **Linux** system (requires `CAP_NET_RAW` capability)
+- **Rust** toolchain (1.75+): [Install Rust](https://rustup.rs/)
+- Upstream **SOCKS5 proxy** for client uplink
 
-### Build
+### Option 1: Download Pre-built Binaries 📦
+
+Download the latest binaries from the [GitHub Releases](https://github.com/AmiRCandy/HTunnel/releases) page:
 
 ```bash
-cargo build --release
+# Download and extract
+wget https://github.com/AmiRCandy/HTunnel/releases/latest/download/htunnel-x86_64-unknown-linux-gnu.tar.gz
+tar -xzf htunnel-x86_64-unknown-linux-gnu.tar.gz
+
+# Make binaries executable
+chmod +x client server
 ```
 
-### Run
+### Option 2: Build from Source 🔧
 
-Server:
+```bash
+# Clone the repository
+git clone https://github.com/AmiRCandy/HTunnel.git
+cd HTunnel
 
+# Build in release mode
+cargo build --release
+
+# Binaries will be in target/release/
+# - client
+# - server
+```
+
+### Running
+
+**Server:**
 ```bash
 sudo ./target/release/server --config config/server.json
 ```
 
-Client:
-
+**Client:**
 ```bash
 sudo ./target/release/client --config config/client.json
 ```
 
-## Configuration (JSON)
-
-HTunnel uses JSON config files in `config/`.
-
-### Client
-
-- `real_ip`: client real IPv4
-- `peer_real_ip`: server real IPv4
-- `peer_faked_ip`: server faked source IP (expected on downlink)
-- `data_port`: UDP port (must match server)
-- `allowed_peers`: extra source IPs to accept
-- `interface`: network interface name
-- `listen`: local SOCKS5 listen address (host:port)
-- `uplink_proxy`: upstream SOCKS5 proxy (host:port)
-- `tunnel_count`, `mtu`, `initial_cwnd`: performance tuning
-
-### Server
-
-- `real_ip`: server real IPv4
-- `peer_real_ip`: client real IPv4
-- `faked_ip`: faked source IP (required if pool is empty)
-- `faked_ip_pool`: faked IP rotation pool
-- `data_port`: UDP port (must match client)
-- `allowed_peers`: allowlist for uplink sources (add proxy public IP here)
-- `interface`: network interface name
-- `tunnel_count`, `mtu`, `initial_cwnd`: performance tuning
-
-Notes:
-
-- If client uplink goes through a SOCKS5 proxy, add the proxy public IP to `allowed_peers` on the server.
-- `peer_faked_ip` is optional on the server; use `allowed_peers` instead.
-
-## License
-
-MIT License. See [LICENSE](./LICENSE).
+> **Note:** Requires `sudo` or `CAP_NET_RAW` capability for raw socket access.
 
 ---
 
-## Contributing
+## ⚙️ Configuration
 
-Bug reports and pull requests welcome. Please test changes thoroughly.
+HTunnel uses **JSON** configuration files with support for comments (`//` and `/* */`).
+
+### Client Configuration (`config/client.json`)
+
+```json
+{
+  // Local SOCKS5 proxy address. Configure your browser/app to use this.
+  "listen": "127.0.0.1:9234",
+
+  // Network interface for raw sockets (or "auto" for auto-detection)
+  "interface": "eth0",
+
+  // Your real IP address
+  "real_ip": "1.1.1.1",
+
+  // Server's real IP address
+  "peer_real_ip": "203.0.113.1",
+
+  // Expected fake IP that server uses for replies
+  "peer_fake_ip": "1.2.3.4",
+
+  // UDP data channel port (must match server)
+  "data_port": 51820,
+
+  // Additional allowed peer IPs
+  "allowed_peers": [],
+
+  // Performance settings
+  "tunnel_count": 4,
+  "mtu": 1380,
+  "initial_cwnd": 10.0,
+
+  // Upstream SOCKS5 proxy for uplink (host:port)
+  "uplink_proxy": "127.0.0.1:1081"
+}
+```
+
+### Server Configuration (`config/server.json`)
+
+```json
+{
+  // Listen address for tunnel data channel
+  "listen": "0.0.0.0:51820",
+
+  // Network interface for raw sockets (or "auto" for auto-detection)
+  "interface": "eth0",
+
+  // Server's real IP address
+  "real_ip": "203.0.113.1",
+
+  // Client's real IP address
+  "peer_real_ip": "1.1.1.1",
+
+  // Fake source IP for outgoing packets
+  "faked_ip": "1.2.3.4",
+
+  // Pool of fake IPs for rotation
+  "faked_ip_pool": ["1.2.3.4", "5.6.7.8"],
+
+  // UDP data channel port (must match client)
+  "data_port": 51820,
+
+  // Additional allowed client IPs (add proxy IPs here)
+  "allowed_peers": [],
+
+  // Performance settings
+  "tunnel_count": 4,
+  "mtu": 1380,
+  "initial_cwnd": 10.0,
+
+  // Not used on server (kept for schema consistency)
+  "uplink_proxy": null
+}
+```
+
+### Configuration Fields
+
+| Field | Client | Server | Description |
+|-------|---------|--------|-------------|
+| `listen` | ✅ | ✅ | Listen address (SOCKS5 for client, data channel for server) |
+| `interface` | ✅ | ✅ | Network interface for raw sockets |
+| `real_ip` | ✅ | ✅ | Real IP address of this machine |
+| `peer_real_ip` | ✅ | ✅ | Real IP address of the peer |
+| `peer_fake_ip` | ✅ | ❌ | Expected fake IP from peer |
+| `faked_ip` | ❌ | ✅ | Fake source IP for outgoing packets |
+| `faked_ip_pool` | ❌ | ✅ | Pool of fake IPs for rotation |
+| `data_port` | ✅ | ✅ | UDP data channel port |
+| `allowed_peers` | ✅ | ✅ | Additional allowed IP addresses |
+| `tunnel_count` | ✅ | ✅ | Number of parallel tunnels |
+| `mtu` | ✅ | ✅ | Max payload bytes per packet |
+| `initial_cwnd` | ✅ | ✅ | Initial congestion window |
+| `uplink_proxy` | ✅ | ❌ | Upstream SOCKS5 proxy for uplink |
 
 ---
 
-## Disclaimer
+## 📝 Notes & Tips
 
-HTunnel is intended for **legitimate network research and educational purposes**. Ensure you have permission before:
-- Sending faked packets
+- **SOCKS5 Proxy:** If client uplink goes through a SOCKS5 proxy, add the proxy's public IP to `allowed_peers` on the server
+- **IP Pool:** Server can rotate between multiple fake IPs for better distribution
+- **Auto Interface:** Set `interface` to `"auto"` to auto-detect the network interface with public IP
+- **MTU:** Keep below 1400 bytes to avoid fragmentation
+- **Permissions:** Raw sockets require `CAP_NET_RAW` or running as root
+
+---
+
+## 🤝 Contributing
+
+Contributions are welcome! Please:
+
+1. Fork the repository
+2. Create a feature branch (`git checkout -b feature/amazing-feature`)
+3. Commit your changes (`git commit -m 'Add amazing feature'`)
+4. Push to the branch (`git push origin feature/amazing-feature`)
+5. Open a Pull Request
+
+Please test your changes thoroughly before submitting.
+
+---
+
+## 📄 License
+
+This project is licensed under the **MIT License** - see the [LICENSE](LICENSE) file for details.
+
+---
+
+## ⚠️ Disclaimer
+
+HTunnel is intended for **legitimate network research and educational purposes** only.
+
+Ensure you have explicit permission before:
+- Sending packets with fake source IPs
 - Tunneling through network infrastructure you don't own
-- Using this tool in any restricted network environment
+- Using this tool in restricted network environments
 
-**Respect local laws and network policies.**
+**The user is solely responsible for complying with local laws and network policies.**
+
+---
+
+<p align="center">
+  Made with ❤️ for educational purposes
+</p>
