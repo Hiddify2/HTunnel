@@ -40,26 +40,26 @@ async fn main() -> Result<()> {
 
     let cfg = Arc::new(Config::from_file(&args.config)?);
 
-    let local_spoof = cfg.pick_spoofed_ip()?;
+    let local_fake = cfg.pick_faked_ip()?;
 
     log::info!(
-        "HTunnel server starting | real={} spoof={} peer={}",
+        "HTunnel server starting | real={} fake={} peer={}",
         cfg.real_ip,
-        local_spoof,
+        local_fake,
         cfg.peer_real_ip
     );
 
-    let sender = OutboundSender::Spoofed(RawSender::spawn()?);
+    let sender = OutboundSender::Faked(RawSender::spawn()?);
 
     let mut allowed = cfg.allowed_peers.clone();
     allowed.push(cfg.peer_real_ip);
-    if let Some(ip) = cfg.peer_spoofed_ip {
+    if let Some(ip) = cfg.peer_faked_ip {
         allowed.push(ip);
     }
     let mut receiver = RawReceiver::spawn(cfg.data_port, allowed)?;
 
     let peer_addr = PeerAddr {
-        local_spoof,
+        local_fake,
         peer_real:   cfg.peer_real_ip,
         data_port:   cfg.data_port,
         is_server:   true,

@@ -9,11 +9,11 @@ real_ip        = "203.0.113.1"
 # The real IPv4 address of the client.
 peer_real_ip   = "10.0.0.1"
 
-# The spoofed source IP the server uses in outgoing replies.
-spoofed_ip     = "1.2.3.4"
+# The faked source IP the server uses in outgoing replies.
+faked_ip     = "1.2.3.4"
 
-# Spoofed IP pool – server can rotate among multiple addresses.
-spoofed_ip_pool = ["1.2.3.4", "5.6.7.8"]
+# Faked IP pool – server can rotate among multiple addresses.
+faked_ip_pool = ["1.2.3.4", "5.6.7.8"]
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Channel Settings

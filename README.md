@@ -14,9 +14,9 @@
 **HTunnel** is a UDP tunnel with asymmetric transport:
 
 - **Uplink (client → server)**: normal UDP sent through an upstream SOCKS5 proxy.
-- **Downlink (server → client)**: spoofed UDP packets from a configurable IP pool.
+- **Downlink (server → client)**: faked UDP packets from a configurable IP pool.
 
-This keeps uploads looking like regular SOCKS5 traffic while downloads are sparse spoofed packets.
+This keeps uploads looking like regular SOCKS5 traffic while downloads are sparse faked packets.
 
 ## Architecture
 
@@ -24,7 +24,7 @@ This keeps uploads looking like regular SOCKS5 traffic while downloads are spars
 [App] -> [Local SOCKS5] -> [Uplink SOCKS5 Proxy] -> [Server]
                                       ^
                                       |
-                            spoofed UDP downlink
+                            faked UDP downlink
 ```
 
 ## Quick Start
@@ -63,7 +63,7 @@ HTunnel uses TOML config files in `config/`.
 
 - `real_ip`: client real IPv4
 - `peer_real_ip`: server real IPv4
-- `peer_spoofed_ip`: server spoofed source IP (expected on downlink)
+- `peer_faked_ip`: server faked source IP (expected on downlink)
 - `data_port`: UDP port (must match server)
 - `allowed_peers`: extra source IPs to accept
 - `interface`: network interface name
@@ -75,8 +75,8 @@ HTunnel uses TOML config files in `config/`.
 
 - `real_ip`: server real IPv4
 - `peer_real_ip`: client real IPv4
-- `spoofed_ip`: spoofed source IP (required if pool is empty)
-- `spoofed_ip_pool`: spoofed IP rotation pool
+- `faked_ip`: faked source IP (required if pool is empty)
+- `faked_ip_pool`: faked IP rotation pool
 - `data_port`: UDP port (must match client)
 - `allowed_peers`: allowlist for uplink sources (add proxy public IP here)
 - `interface`: network interface name
@@ -85,7 +85,7 @@ HTunnel uses TOML config files in `config/`.
 Notes:
 
 - If client uplink goes through a SOCKS5 proxy, add the proxy public IP to `allowed_peers` on the server.
-- `peer_spoofed_ip` is optional on the server; use `allowed_peers` instead.
+- `peer_faked_ip` is optional on the server; use `allowed_peers` instead.
 
 ## License
 
@@ -102,7 +102,7 @@ Bug reports and pull requests welcome. Please test changes thoroughly.
 ## Disclaimer
 
 HTunnel is intended for **legitimate network research and educational purposes**. Ensure you have permission before:
-- Sending spoofed packets
+- Sending faked packets
 - Tunneling through network infrastructure you don't own
 - Using this tool in any restricted network environment
 

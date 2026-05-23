@@ -119,11 +119,11 @@ impl Tunnel {
 
 // ── Remote addressing ─────────────────────────────────────────────────────────
 
-/// The addressing information needed to build spoofed outgoing packets.
+/// The addressing information needed to build faked outgoing packets.
 #[derive(Debug, Clone)]
 pub struct PeerAddr {
-    /// Source IP we spoof on outgoing packets (server/downlink).
-    pub local_spoof: Ipv4Addr,
+    /// Source IP we fake on outgoing packets (server/downlink).
+    pub local_fake: Ipv4Addr,
     /// Destination IP of the peer (their real address).
     pub peer_real:   Ipv4Addr,
     /// UDP destination port for the data channel.
@@ -135,8 +135,8 @@ pub struct PeerAddr {
 /// Outbound transport selection.
 #[derive(Clone)]
 pub enum OutboundSender {
-    /// Spoofed UDP using raw sockets.
-    Spoofed(RawSender),
+    /// Faked UDP using raw sockets.
+    Faked(RawSender),
     /// Normal UDP via SOCKS5 UDP associate (client uplink).
     Proxy(UdpProxySender),
 }
@@ -553,9 +553,9 @@ impl TunnelManager {
         let a   = &self.0.addr;
         let enc = pkt.encode();
         match &self.0.sender {
-            OutboundSender::Spoofed(sender) => {
+            OutboundSender::Faked(sender) => {
                 let out = OutPacket::Udp {
-                    src_ip:   a.local_spoof,
+                    src_ip:   a.local_fake,
                     dst_ip:   a.peer_real,
                     src_port: a.data_port,
                     dst_port: a.data_port,

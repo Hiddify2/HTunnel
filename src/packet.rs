@@ -1,5 +1,5 @@
 //! HTunnel wire protocol – the application-level packet that rides inside
-//! spoofed UDP payloads.
+//! faked UDP payloads.
 
 use anyhow::{bail, Result};
 use bytes::{Buf, BufMut, Bytes, BytesMut};

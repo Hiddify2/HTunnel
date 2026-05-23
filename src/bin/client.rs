@@ -62,17 +62,17 @@ async fn main() -> Result<()> {
     log::info!("uplink proxy connected | relay={}", sender.relay_addr());
     let sender = OutboundSender::Proxy(sender);
 
-    // Build the raw socket receiver (listens for spoofed UDP downlink).
+    // Build the raw socket receiver (listens for faked UDP downlink).
     let mut allowed = cfg.allowed_peers.clone();
     allowed.push(cfg.peer_real_ip);
-    if let Some(ip) = cfg.peer_spoofed_ip {
+    if let Some(ip) = cfg.peer_faked_ip {
         allowed.push(ip);
     }
     let mut receiver = RawReceiver::spawn(cfg.data_port, allowed)?;
 
     // Build the tunnel manager.
     let peer_addr = PeerAddr {
-        local_spoof: Ipv4Addr::UNSPECIFIED,
+        local_fake: Ipv4Addr::UNSPECIFIED,
         peer_real:   cfg.peer_real_ip,
         data_port:   cfg.data_port,
         is_server:   false,

@@ -2,7 +2,7 @@
 //!
 //! Provides two abstractions:
 //!
-//! - [`RawSender`] – builds and transmits spoofed IPv4/UDP packets via a
+//! - [`RawSender`] – builds and transmits faked IPv4/UDP packets via a
 //!   `SOCK_RAW | IPPROTO_RAW` socket with `IP_HDRINCL`.
 //! - [`RawReceiver`] – receives raw IP packets from a `SOCK_RAW | IPPROTO_UDP`
 //!   socket and demultiplexes them into `CandyPacket`s.
@@ -27,12 +27,12 @@ use crate::packet::CandyPacket;
 
 const IP_HDR_LEN: usize = 20;
 const UDP_HDR_LEN: usize = 8;
-/// IP TTL for spoofed packets.
-const SPOOF_TTL: u8 = 64;
+/// IP TTL for faked packets.
+const FAKE_TTL: u8 = 64;
 
 // ── Outgoing packet descriptor ────────────────────────────────────────────────
 
-/// A request to transmit a single spoofed packet.
+/// A request to transmit a single faked packet.
 #[derive(Debug)]
 pub enum OutPacket {
     /// Send a UDP packet carrying `payload` on the data channel.
@@ -56,7 +56,7 @@ pub struct InPacket {
 
 // ── RawSender ────────────────────────────────────────────────────────────────
 
-/// Sends spoofed IPv4 packets using a background thread.
+/// Sends faked IPv4 packets using a background thread.
 ///
 /// Clone the inner `mpsc::Sender` to send packets from multiple tasks.
 #[derive(Clone)]
@@ -271,7 +271,7 @@ fn is_allowed(ip: Ipv4Addr, allowed: &[Ipv4Addr]) -> bool {
 
 // ── Packet builders ───────────────────────────────────────────────────────────
 
-/// Build a spoofed IPv4/UDP packet.
+/// Build a faked IPv4/UDP packet.
 pub fn build_udp_packet(
     src_ip:   Ipv4Addr,
     dst_ip:   Ipv4Addr,
@@ -316,7 +316,7 @@ fn fill_ipv4_header(
     pkt.set_identification(rand::random());
     pkt.set_flags(Ipv4Flags::DontFragment);
     pkt.set_fragment_offset(0);
-    pkt.set_ttl(SPOOF_TTL);
+    pkt.set_ttl(FAKE_TTL);
     pkt.set_next_level_protocol(protocol);
     pkt.set_source(src_ip);
     pkt.set_destination(dst_ip);

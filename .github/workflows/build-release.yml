@@ -98,7 +98,7 @@ jobs:
             | `HTunnel-server-linux-x86_64` | Linux x86_64 server (tunnel endpoint) |
 
             > **Note:** Both binaries require `CAP_NET_RAW` or root privileges to
-            > use raw sockets for IP spoofing.
+            > use raw sockets for IP faking.
           files: |
             HTunnel-client-linux-x86_64
             HTunnel-server-linux-x86_64
